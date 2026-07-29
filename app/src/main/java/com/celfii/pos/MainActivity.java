@@ -16,11 +16,17 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import com.google.android.gms.mlkit.vision.codescanner.GmsBarcodeScanner;
+import com.google.android.gms.mlkit.vision.codescanner.GmsBarcodeScannerOptions;
+import com.google.android.gms.mlkit.vision.codescanner.GmsBarcodeScanning;
+import com.google.mlkit.vision.barcode.common.Barcode;
 
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
@@ -39,7 +45,7 @@ public final class MainActivity extends Activity {
     private static final NumberFormat MONEY =
             NumberFormat.getCurrencyInstance(Locale.forLanguageTag("es-AR"));
 
-    private final ApiClient api = new ApiClient();
+    private ApiClient api;
     private Models.Sale sale;
     private LinearLayout content;
     private LinearLayout productList;
@@ -48,10 +54,12 @@ public final class MainActivity extends Activity {
     private EditText search;
     private PrinterManager printer;
     private String seller = "Cel-Fii";
+    private boolean productsManagement;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        api = new ApiClient(this);
         printer = new PrinterManager(this);
         requestNeededPermissions();
         newSale();
@@ -73,13 +81,14 @@ public final class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);
 
-        TextView brand = text("CEL-FII", 25, LIME, true);
-        brand.setPadding(dp(18), dp(18), dp(18), dp(4));
-        root.addView(brand, matchWrap());
-
-        TextView subtitle = text("TECNOLOGÍA · PUNTO DE VENTA", 11, MUTED, true);
-        subtitle.setPadding(dp(18), 0, dp(18), dp(14));
-        root.addView(subtitle, matchWrap());
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.logo_celfii);
+        logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(132), dp(76));
+        logoParams.gravity = Gravity.CENTER_HORIZONTAL;
+        logoParams.topMargin = dp(8);
+        logoParams.bottomMargin = dp(6);
+        root.addView(logo, logoParams);
 
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -93,17 +102,16 @@ public final class MainActivity extends Activity {
         nav.setPadding(dp(8), dp(7), dp(8), dp(9));
         nav.setBackgroundColor(PANEL);
         addNav(nav, "VENTA", this::showSale);
-        addNav(nav, "PRODUCTOS", () -> showMessagePage(
-                "Productos", "Alta, edición, fotos, precios y stock."));
+        addNav(nav, "PRODUCTOS", this::showProducts);
         addNav(nav, "HISTORIAL", () -> showMessagePage(
                 "Historial", "Ventas, reimpresión y devoluciones."));
-        addNav(nav, "MÁS", () -> showMessagePage(
-                "Más funciones", "Clientes, ingresos, informes y configuración."));
+        addNav(nav, "MÁS", this::showMore);
         root.addView(nav, matchWrap());
         setContentView(root);
     }
 
     private void showSale() {
+        productsManagement = false;
         content.removeAllViews();
         ScrollView scroll = new ScrollView(this);
         LinearLayout body = new LinearLayout(this);
@@ -117,20 +125,7 @@ public final class MainActivity extends Activity {
         meta.setPadding(0, dp(3), 0, dp(12));
         body.addView(meta);
 
-        if (!api.isConfigured()) {
-            TextView warning = text(
-                    "MODO DE PREPARACIÓN · Falta publicar el conector seguro de Google Sheets.",
-                    12, LIME, true);
-            warning.setBackgroundResource(R.drawable.panel);
-            warning.setPadding(dp(14), dp(12), dp(14), dp(12));
-            body.addView(warning, marginBottom(12));
-        }
-
-        search = input("Buscar artículo, código o modelo");
-        body.addView(search, matchWrap());
-        Button find = button("BUSCAR PRODUCTOS", false);
-        find.setOnClickListener(v -> loadProducts());
-        body.addView(find, marginTopBottom(8, 14));
+        addSearchControls(body);
 
         TextView productsTitle = text("Productos", 17, TEXT, true);
         body.addView(productsTitle, marginBottom(8));
@@ -161,8 +156,10 @@ public final class MainActivity extends Activity {
 
     private void loadProducts() {
         if (!api.isConfigured()) {
-            showDemoProducts();
-            toast("Mostrando productos de demostración");
+            productList.removeAllViews();
+            productList.addView(text(
+                    "Conectá Google Sheets desde MÁS → Conexión con la planilla.",
+                    13, MUTED, false));
             return;
         }
         productList.removeAllViews();
@@ -175,17 +172,6 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> toast(message));
             }
         });
-    }
-
-    private void showDemoProducts() {
-        List<Models.Product> demo = new ArrayList<>();
-        demo.add(new Models.Product("DEMO1", "Cargador USB-C 20W", "Cargadores",
-                18000, 22000, 8, ""));
-        demo.add(new Models.Product("DEMO2", "Vidrio templado iPhone", "Templados",
-                6500, 8000, 15, ""));
-        demo.add(new Models.Product("DEMO3", "Cable reforzado USB-C", "Cables",
-                9000, 11000, 5, ""));
-        renderProducts(demo);
     }
 
     private void renderProducts(List<Models.Product> products) {
@@ -204,10 +190,14 @@ public final class MainActivity extends Activity {
             info.addView(text(money(product.cashPrice), 16, LIME, true));
             row.addView(info, new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-            Button add = button("+", true);
+            Button add = button(productsManagement ? "VER" : "+", true);
             add.setMinWidth(dp(48));
-            add.setOnClickListener(v -> addProduct(product));
-            row.addView(add, new LinearLayout.LayoutParams(dp(52), dp(48)));
+            add.setOnClickListener(v -> {
+                if (productsManagement) showProductDetails(product);
+                else addProduct(product);
+            });
+            row.addView(add, new LinearLayout.LayoutParams(
+                    productsManagement ? dp(76) : dp(52), dp(48)));
             productList.addView(row, marginBottom(8));
         }
     }
@@ -339,8 +329,7 @@ public final class MainActivity extends Activity {
         sale.date = new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
                 .format(new Date());
         if (!api.isConfigured()) {
-            sale.id = "DEMO-" + System.currentTimeMillis();
-            choosePrinter();
+            toast("Primero conectá la app con Google Sheets desde la pestaña MÁS");
             return;
         }
         toast("Registrando venta…");
@@ -416,6 +405,167 @@ public final class MainActivity extends Activity {
         copy.setPadding(0, dp(12), 0, 0);
         box.addView(copy);
         content.addView(box);
+    }
+
+    private void showProducts() {
+        productsManagement = true;
+        content.removeAllViews();
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(16), dp(8), dp(16), dp(18));
+        scroll.addView(body);
+
+        body.addView(text("Productos", 27, TEXT, true));
+        TextView subtitle = text("Catálogo, códigos, precios y stock", 13, MUTED, false);
+        subtitle.setPadding(0, dp(3), 0, dp(14));
+        body.addView(subtitle);
+        addSearchControls(body);
+
+        productList = new LinearLayout(this);
+        productList.setOrientation(LinearLayout.VERTICAL);
+        body.addView(productList, matchWrap());
+        content.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        loadProducts();
+    }
+
+    private void addSearchControls(LinearLayout body) {
+        search = input("Nombre, modelo o código de barras");
+        body.addView(search, matchWrap());
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button find = button("BUSCAR", false);
+        find.setOnClickListener(v -> loadProducts());
+        actions.addView(find, new LinearLayout.LayoutParams(0, dp(52), 1));
+        Button scan = button("▣ ESCANEAR", true);
+        scan.setOnClickListener(v -> scanBarcode());
+        LinearLayout.LayoutParams scanParams = new LinearLayout.LayoutParams(0, dp(52), 1);
+        scanParams.leftMargin = dp(8);
+        actions.addView(scan, scanParams);
+        body.addView(actions, marginTopBottom(8, 14));
+    }
+
+    private void scanBarcode() {
+        GmsBarcodeScannerOptions options = new GmsBarcodeScannerOptions.Builder()
+                .setBarcodeFormats(
+                        Barcode.FORMAT_EAN_13,
+                        Barcode.FORMAT_EAN_8,
+                        Barcode.FORMAT_UPC_A,
+                        Barcode.FORMAT_UPC_E,
+                        Barcode.FORMAT_CODE_128,
+                        Barcode.FORMAT_CODE_39)
+                .enableAutoZoom()
+                .build();
+        GmsBarcodeScanner scanner = GmsBarcodeScanning.getClient(this, options);
+        scanner.startScan()
+                .addOnSuccessListener(barcode -> {
+                    String value = barcode.getRawValue();
+                    if (value != null) {
+                        search.setText(value);
+                        loadProducts();
+                    }
+                })
+                .addOnFailureListener(error ->
+                        toast("No se pudo abrir el lector: " + error.getMessage()));
+    }
+
+    private void showProductDetails(Models.Product product) {
+        String message = product.category
+                + "\n\nPrecio efectivo: " + money(product.cashPrice)
+                + "\nPrecio crédito: " + money(product.cardPrice)
+                + "\nStock actual: " + product.stock
+                + "\nCódigo interno: " + product.id;
+        new AlertDialog.Builder(this)
+                .setTitle(product.name)
+                .setMessage(message)
+                .setPositiveButton("Cerrar", null)
+                .show();
+    }
+
+    private void showMore() {
+        productsManagement = false;
+        content.removeAllViews();
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(16), dp(8), dp(16), dp(18));
+        scroll.addView(body);
+
+        body.addView(text("Más", 27, TEXT, true));
+        body.addView(menuCard("Conexión con la planilla",
+                api.isConfigured() ? "Conectada" : "Pendiente de configurar",
+                this::showServerConfiguration));
+        body.addView(menuCard("Impresora Bluetooth",
+                "Vincular, seleccionar y realizar prueba",
+                this::testPrinter));
+        body.addView(menuCard("Clientes",
+                "Consultar y administrar clientes",
+                () -> showMessagePage("Clientes", "Módulo en construcción.")));
+        body.addView(menuCard("Ingreso de mercadería",
+                "Actualizar cantidades y costos",
+                () -> showMessagePage("Ingresos", "Módulo en construcción.")));
+        body.addView(menuCard("Informes",
+                "Ventas, ganancias y faltantes",
+                () -> showMessagePage("Informes", "Módulo en construcción.")));
+        body.addView(menuCard("Acerca de",
+                "Cel-Fii POS v0.2 · www.cel-fii.com",
+                () -> toast("Cel-Fii Tecnología · San Rafael, Mendoza")));
+        content.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    private View menuCard(String titleValue, String detail, Runnable action) {
+        LinearLayout row = panel();
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.addView(text(titleValue, 15, TEXT, true));
+        copy.addView(text(detail, 12, MUTED, false));
+        row.addView(copy, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView arrow = text("›", 28, LIME, true);
+        row.addView(arrow);
+        row.setOnClickListener(v -> action.run());
+        row.setClickable(true);
+        row.setLayoutParams(marginBottom(8));
+        return row;
+    }
+
+    private void showServerConfiguration() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
+        EditText url = input("URL de Google Apps Script");
+        url.setText(api.configuredUrl());
+        box.addView(url, marginBottom(10));
+        EditText token = input("Token de conexión");
+        box.addView(token);
+        new AlertDialog.Builder(this)
+                .setTitle("Conexión con Google Sheets")
+                .setView(box)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Guardar", (dialog, which) -> {
+                    api.configure(url.getText().toString(), token.getText().toString());
+                    toast("Configuración guardada");
+                    showMore();
+                })
+                .show();
+    }
+
+    private void testPrinter() {
+        Models.Sale test = new Models.Sale();
+        test.id = "PRUEBA";
+        test.date = new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+                .format(new Date());
+        test.seller = seller;
+        test.customerName = "Prueba Cel-Fii";
+        test.lines.add(new Models.CartLine(
+                new Models.Product("TEST", "Prueba de impresión", "", 0, 0, 1, ""),
+                1, 0));
+        test.payments.add(new Models.Payment("Prueba", 0, 0));
+        sale = test;
+        choosePrinter();
     }
 
     private void addNav(LinearLayout nav, String label, Runnable action) {
