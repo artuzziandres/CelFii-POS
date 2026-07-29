@@ -1,5 +1,8 @@
 package com.celfii.pos;
 
+import android.content.Context;
+import android.content.SharedPreferences;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -15,20 +18,38 @@ import java.util.ArrayList;
 import java.util.List;
 
 final class ApiClient {
+    private static final String PREFS = "celfii_server";
+    private final SharedPreferences preferences;
+
+    ApiClient(Context context) {
+        preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+
     interface Callback<T> {
         void onSuccess(T value);
         void onError(String message);
     }
 
     boolean isConfigured() {
-        return !BuildConfig.CELFII_API_URL.isBlank() && !BuildConfig.CELFII_API_TOKEN.isBlank();
+        return !apiUrl().isBlank() && !apiToken().isBlank();
+    }
+
+    void configure(String url, String token) {
+        preferences.edit()
+                .putString("url", url.trim())
+                .putString("token", token.trim())
+                .apply();
+    }
+
+    String configuredUrl() {
+        return apiUrl();
     }
 
     void loadProducts(String query, Callback<List<Models.Product>> callback) {
         new Thread(() -> {
             try {
-                String url = BuildConfig.CELFII_API_URL
-                        + "?action=products&token=" + encoded(BuildConfig.CELFII_API_TOKEN)
+                String url = apiUrl()
+                        + "?action=products&token=" + encoded(apiToken())
                         + "&q=" + encoded(query == null ? "" : query);
                 JSONObject response = request("GET", url, null);
                 JSONArray rows = response.getJSONArray("products");
@@ -54,7 +75,7 @@ final class ApiClient {
             try {
                 JSONObject body = new JSONObject();
                 body.put("action", "createSale");
-                body.put("token", BuildConfig.CELFII_API_TOKEN);
+                body.put("token", apiToken());
                 body.put("clientRequestId", sale.id);
                 body.put("customerId", sale.customerId);
                 body.put("customerName", sale.customerName);
@@ -78,7 +99,7 @@ final class ApiClient {
                 }
                 body.put("payments", payments);
 
-                JSONObject response = request("POST", BuildConfig.CELFII_API_URL, body);
+                JSONObject response = request("POST", apiUrl(), body);
                 callback.onSuccess(response.getString("saleId"));
             } catch (Exception e) {
                 callback.onError(e.getMessage() == null ? "No se pudo registrar la venta" : e.getMessage());
@@ -116,5 +137,13 @@ final class ApiClient {
 
     private static String encoded(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private String apiUrl() {
+        return preferences.getString("url", BuildConfig.CELFII_API_URL);
+    }
+
+    private String apiToken() {
+        return preferences.getString("token", BuildConfig.CELFII_API_TOKEN);
     }
 }
