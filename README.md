@@ -54,3 +54,5 @@ impresora vinculada al finalizar la venta.
 - Ingresos, devoluciones y caja.
 - Servicio técnico.
 - Informes y control de ganancias.
+
+Compilación automática del APK activada mediante GitHub Actions.
