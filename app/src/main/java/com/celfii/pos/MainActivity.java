@@ -27,6 +27,7 @@ import com.google.mlkit.vision.codescanner.GmsBarcodeScanner;
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions;
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
 import com.google.mlkit.vision.barcode.common.Barcode;
+import com.bumptech.glide.Glide;
 
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
@@ -184,8 +185,42 @@ public final class MainActivity extends Activity {
             productList.addView(text("No encontramos productos.", 13, MUTED, false));
             return;
         }
+        List<Models.Product> visible = new ArrayList<>();
+        boolean browsing = search == null || search.getText().toString().trim().isEmpty();
         for (Models.Product product : products) {
+            if (!productsManagement && browsing && product.stock <= 0) continue;
+            visible.add(product);
+            if (visible.size() == 40) break;
+        }
+        if (visible.isEmpty()) {
+            productList.addView(text(
+                    "No hay artículos con stock. Buscá por nombre o escaneá el código.",
+                    13, MUTED, false));
+            return;
+        }
+        if (products.size() > visible.size()) {
+            TextView hint = text("Mostrando " + visible.size()
+                    + " resultados. Usá la búsqueda para encontrar otro producto.",
+                    12, MUTED, false);
+            hint.setPadding(0, 0, 0, dp(9));
+            productList.addView(hint);
+        }
+        for (Models.Product product : visible) {
             LinearLayout row = panel();
+            ImageView photo = new ImageView(this);
+            photo.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            photo.setBackgroundColor(Color.rgb(28, 32, 29));
+            String imageUrl = product.imageUrl();
+            if (!imageUrl.isEmpty()) {
+                Glide.with(this)
+                        .load(imageUrl)
+                        .centerCrop()
+                        .into(photo);
+            }
+            LinearLayout.LayoutParams photoParams =
+                    new LinearLayout.LayoutParams(dp(58), dp(58));
+            photoParams.rightMargin = dp(10);
+            row.addView(photo, photoParams);
             LinearLayout info = new LinearLayout(this);
             info.setOrientation(LinearLayout.VERTICAL);
             info.addView(text(product.name, 15, TEXT, true));
