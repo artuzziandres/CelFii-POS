@@ -16,12 +16,15 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 final class ApiClient {
     private static final String PREFS = "celfii_server";
     private final SharedPreferences preferences;
+    private final Context context;
 
     ApiClient(Context context) {
+        this.context = context.getApplicationContext();
         preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
@@ -46,6 +49,10 @@ final class ApiClient {
     }
 
     void loadProducts(String query, Callback<List<Models.Product>> callback) {
+        if (!isConfigured()) {
+            loadCachedProducts(query, callback);
+            return;
+        }
         new Thread(() -> {
             try {
                 String url = apiUrl()
@@ -65,7 +72,38 @@ final class ApiClient {
                 }
                 callback.onSuccess(products);
             } catch (Exception e) {
-                callback.onError(e.getMessage() == null ? "No se pudo cargar el catálogo" : e.getMessage());
+                loadCachedProducts(query, callback);
+            }
+        }).start();
+    }
+
+    private void loadCachedProducts(String query, Callback<List<Models.Product>> callback) {
+        new Thread(() -> {
+            try (InputStream input = context.getAssets().open("products.json");
+                 BufferedReader reader = new BufferedReader(
+                         new InputStreamReader(input, StandardCharsets.UTF_8))) {
+                StringBuilder source = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) source.append(line);
+                JSONArray rows = new JSONArray(source.toString());
+                String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+                List<Models.Product> products = new ArrayList<>();
+                for (int i = 0; i < rows.length(); i++) {
+                    JSONObject row = rows.getJSONObject(i);
+                    if (!needle.isEmpty()
+                            && !row.optString("search").toLowerCase(Locale.ROOT).contains(needle)) {
+                        continue;
+                    }
+                    products.add(new Models.Product(
+                            row.optString("id"), row.optString("name"),
+                            row.optString("category"), row.optDouble("cashPrice"),
+                            row.optDouble("cardPrice"), row.optInt("stock"),
+                            row.optString("photo")
+                    ));
+                }
+                callback.onSuccess(products);
+            } catch (Exception e) {
+                callback.onError("No se pudo abrir el catálogo de productos");
             }
         }).start();
     }
