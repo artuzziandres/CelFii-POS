@@ -14,7 +14,7 @@ import java.util.List;
 
 final class PosDatabase extends SQLiteOpenHelper {
     PosDatabase(Context context) {
-        super(context, "celfii_ventas.db", null, 2);
+        super(context, "celfii_ventas.db", null, 3);
     }
 
     @Override public void onCreate(SQLiteDatabase db) {
