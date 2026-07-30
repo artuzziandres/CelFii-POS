@@ -2,6 +2,8 @@ package com.celfii.pos;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 final class Models {
     static final class Product {
@@ -12,9 +14,16 @@ final class Models {
         final double cardPrice;
         final int stock;
         final String photo;
+        final String code;
+        final String backupCode;
 
         Product(String id, String name, String category, double cashPrice,
                 double cardPrice, int stock, String photo) {
+            this(id, name, category, cashPrice, cardPrice, stock, photo, "", "");
+        }
+
+        Product(String id, String name, String category, double cashPrice,
+                double cardPrice, int stock, String photo, String code, String backupCode) {
             this.id = id;
             this.name = name;
             this.category = category;
@@ -22,6 +31,16 @@ final class Models {
             this.cardPrice = cardPrice;
             this.stock = stock;
             this.photo = photo;
+            this.code = code;
+            this.backupCode = backupCode;
+        }
+
+        String imageUrl() {
+            if (photo == null || photo.isBlank()) return "";
+            return "https://www.appsheet.com/template/gettablefileurl"
+                    + "?appName=Cel-Fii1-645565216"
+                    + "&tableName=Articulos"
+                    + "&fileName=" + URLEncoder.encode(photo, StandardCharsets.UTF_8);
         }
     }
 

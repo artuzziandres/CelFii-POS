@@ -54,7 +54,7 @@ function getProducts_(query) {
   const needle = normalize_(query);
   const products = [];
 
-  for (let row = 1; row < values.length && products.length < 250; row++) {
+  for (let row = 1; row < values.length; row++) {
     const source = values[row];
     const name = cell_(source, headers, 'Nombre');
     const id = cell_(source, headers, 'idArticulos');
