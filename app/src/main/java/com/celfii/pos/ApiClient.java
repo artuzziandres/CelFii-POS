@@ -25,6 +25,7 @@ final class ApiClient {
             + "1Fpow8nljHN21D2wBsi7r6IZf5WS1O7RQTUHzGGOXRZ4"
             + "/gviz/tq?tqx=out:csv&sheet=Articulos";
     private final SharedPreferences preferences;
+    private volatile List<CachedProduct> publicCatalog;
 
     ApiClient(Context context) {
         preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -82,18 +83,34 @@ final class ApiClient {
     private void loadPublicProducts(String query, Callback<List<Models.Product>> callback) {
         new Thread(() -> {
             try {
-                List<List<String>> rows = parseCsv(requestText(PUBLIC_PRODUCTS_URL));
-                if (rows.isEmpty()) {
-                    callback.onSuccess(new ArrayList<>());
-                    return;
-                }
-                java.util.Map<String, Integer> headers = new java.util.HashMap<>();
-                for (int i = 0; i < rows.get(0).size(); i++) {
-                    headers.put(rows.get(0).get(i).trim(), i);
+                List<CachedProduct> catalog = publicCatalog;
+                if (catalog == null) {
+                    catalog = downloadPublicCatalog();
+                    publicCatalog = catalog;
                 }
                 String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
                 List<Models.Product> products = new ArrayList<>();
-                for (int i = 1; i < rows.size(); i++) {
+                for (CachedProduct item : catalog) {
+                    if (needle.isEmpty() || item.search.contains(needle)) {
+                        products.add(item.product);
+                    }
+                }
+                callback.onSuccess(products);
+            } catch (Exception e) {
+                callback.onError("No se pudo sincronizar la pestaña Artículos");
+            }
+        }).start();
+    }
+
+    private List<CachedProduct> downloadPublicCatalog() throws Exception {
+        List<List<String>> rows = parseCsv(requestText(PUBLIC_PRODUCTS_URL));
+        List<CachedProduct> catalog = new ArrayList<>();
+        if (rows.isEmpty()) return catalog;
+        java.util.Map<String, Integer> headers = new java.util.HashMap<>();
+        for (int i = 0; i < rows.get(0).size(); i++) {
+            headers.put(rows.get(0).get(i).trim(), i);
+        }
+        for (int i = 1; i < rows.size(); i++) {
                     List<String> row = rows.get(i);
                     String id = csvCell(row, headers, "idArticulos");
                     String name = csvCell(row, headers, "Nombre");
@@ -103,20 +120,26 @@ final class ApiClient {
                             + csvCell(row, headers, "Codigo") + " "
                             + csvCell(row, headers, "Codigo_Backup"))
                             .toLowerCase(Locale.ROOT);
-                    if (!needle.isEmpty() && !searchable.contains(needle)) continue;
-                    products.add(new Models.Product(
+                    Models.Product product = new Models.Product(
                             id, name, csvCell(row, headers, "Categoría"),
                             csvNumber(csvCell(row, headers, "Precio Efectivo")),
                             csvNumber(csvCell(row, headers, "Precio en 3 Cuotas")),
                             (int) csvNumber(csvCell(row, headers, "Stock Actual")),
                             csvCell(row, headers, "Foto")
-                    ));
-                }
-                callback.onSuccess(products);
-            } catch (Exception e) {
-                callback.onError("No se pudo sincronizar la pestaña Artículos");
-            }
-        }).start();
+                    );
+                    catalog.add(new CachedProduct(product, searchable));
+        }
+        return catalog;
+    }
+
+    private static final class CachedProduct {
+        final Models.Product product;
+        final String search;
+
+        CachedProduct(Models.Product product, String search) {
+            this.product = product;
+            this.search = search;
+        }
     }
 
     private static String csvCell(List<String> row,
