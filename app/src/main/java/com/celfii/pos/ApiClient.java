@@ -70,7 +70,8 @@ final class ApiClient {
                             row.optString("id"), row.optString("name"),
                             row.optString("category"), row.optDouble("cashPrice"),
                             row.optDouble("cardPrice"), row.optInt("stock"),
-                            row.optString("photo")
+                            row.optString("photo"), row.optString("code"),
+                            row.optString("backupCode")
                     ));
                 }
                 callback.onSuccess(products);
@@ -125,7 +126,9 @@ final class ApiClient {
                             csvNumber(csvCell(row, headers, "Precio Efectivo")),
                             csvNumber(csvCell(row, headers, "Precio en 3 Cuotas")),
                             (int) csvNumber(csvCell(row, headers, "Stock Actual")),
-                            csvCell(row, headers, "Foto")
+                            csvCell(row, headers, "Foto"),
+                            csvCell(row, headers, "Codigo"),
+                            csvCell(row, headers, "Codigo_Backup")
                     );
                     catalog.add(new CachedProduct(product, searchable));
         }
