@@ -81,14 +81,25 @@ public final class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);
 
+        LinearLayout brand = new LinearLayout(this);
+        brand.setGravity(Gravity.CENTER_VERTICAL);
+        brand.setPadding(dp(14), dp(8), dp(14), dp(8));
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.logo_celfii);
-        logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(132), dp(76));
-        logoParams.gravity = Gravity.CENTER_HORIZONTAL;
-        logoParams.topMargin = dp(8);
-        logoParams.bottomMargin = dp(6);
-        root.addView(logo, logoParams);
+        logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        brand.addView(logo, new LinearLayout.LayoutParams(dp(74), dp(74)));
+        LinearLayout brandCopy = new LinearLayout(this);
+        brandCopy.setOrientation(LinearLayout.VERTICAL);
+        TextView brandName = text("CEL-FII", 25, LIME, true);
+        TextView brandMode = text("VENTAS", 12, MUTED, true);
+        brandMode.setLetterSpacing(0.25f);
+        brandCopy.addView(brandName);
+        brandCopy.addView(brandMode);
+        LinearLayout.LayoutParams brandTextParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        brandTextParams.leftMargin = dp(10);
+        brand.addView(brandCopy, brandTextParams);
+        root.addView(brand, matchWrap());
 
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -151,19 +162,12 @@ public final class MainActivity extends Activity {
         content.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         renderCart();
-        if (api.isConfigured()) loadProducts();
+        loadProducts();
     }
 
     private void loadProducts() {
-        if (!api.isConfigured()) {
-            productList.removeAllViews();
-            productList.addView(text(
-                    "Conectá Google Sheets desde MÁS → Conexión con la planilla.",
-                    13, MUTED, false));
-            return;
-        }
         productList.removeAllViews();
-        productList.addView(text("Consultando stock actualizado…", 13, MUTED, false));
+        productList.addView(text("Cargando productos…", 13, MUTED, false));
         api.loadProducts(search.getText().toString(), new ApiClient.Callback<>() {
             @Override public void onSuccess(List<Models.Product> value) {
                 runOnUiThread(() -> renderProducts(value));
