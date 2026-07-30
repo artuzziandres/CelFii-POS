@@ -3,9 +3,7 @@ name: Compilar APK
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    branches: [main, agent/app-v02]
 
 permissions:
   contents: read
