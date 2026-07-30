@@ -13,8 +13,8 @@ android {
         applicationId = "com.celfii.pos"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.0.0"
+        versionCode = 11
+        versionName = "1.0.1"
 
         buildConfigField("String", "CELFII_API_URL", "\"${apiUrl.get()}\"")
         buildConfigField("String", "CELFII_API_TOKEN", "\"${apiToken.get()}\"")
