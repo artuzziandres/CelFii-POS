@@ -20,11 +20,13 @@ import java.util.Locale;
 
 final class ApiClient {
     private static final String PREFS = "celfii_server";
+    private static final String PUBLIC_PRODUCTS_URL =
+            "https://docs.google.com/spreadsheets/d/"
+            + "1Fpow8nljHN21D2wBsi7r6IZf5WS1O7RQTUHzGGOXRZ4"
+            + "/gviz/tq?tqx=out:csv&sheet=Articulos";
     private final SharedPreferences preferences;
-    private final Context context;
 
     ApiClient(Context context) {
-        this.context = context.getApplicationContext();
         preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
@@ -50,7 +52,7 @@ final class ApiClient {
 
     void loadProducts(String query, Callback<List<Models.Product>> callback) {
         if (!isConfigured()) {
-            loadCachedProducts(query, callback);
+            loadPublicProducts(query, callback);
             return;
         }
         new Thread(() -> {
@@ -72,40 +74,121 @@ final class ApiClient {
                 }
                 callback.onSuccess(products);
             } catch (Exception e) {
-                loadCachedProducts(query, callback);
+                loadPublicProducts(query, callback);
             }
         }).start();
     }
 
-    private void loadCachedProducts(String query, Callback<List<Models.Product>> callback) {
+    private void loadPublicProducts(String query, Callback<List<Models.Product>> callback) {
         new Thread(() -> {
-            try (InputStream input = context.getAssets().open("products.json");
-                 BufferedReader reader = new BufferedReader(
-                         new InputStreamReader(input, StandardCharsets.UTF_8))) {
-                StringBuilder source = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) source.append(line);
-                JSONArray rows = new JSONArray(source.toString());
+            try {
+                List<List<String>> rows = parseCsv(requestText(PUBLIC_PRODUCTS_URL));
+                if (rows.isEmpty()) {
+                    callback.onSuccess(new ArrayList<>());
+                    return;
+                }
+                java.util.Map<String, Integer> headers = new java.util.HashMap<>();
+                for (int i = 0; i < rows.get(0).size(); i++) {
+                    headers.put(rows.get(0).get(i).trim(), i);
+                }
                 String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
                 List<Models.Product> products = new ArrayList<>();
-                for (int i = 0; i < rows.length(); i++) {
-                    JSONObject row = rows.getJSONObject(i);
-                    if (!needle.isEmpty()
-                            && !row.optString("search").toLowerCase(Locale.ROOT).contains(needle)) {
-                        continue;
-                    }
+                for (int i = 1; i < rows.size(); i++) {
+                    List<String> row = rows.get(i);
+                    String id = csvCell(row, headers, "idArticulos");
+                    String name = csvCell(row, headers, "Nombre");
+                    if (id.isBlank() || name.isBlank()) continue;
+                    String searchable = (name + " "
+                            + csvCell(row, headers, "Categoría") + " "
+                            + csvCell(row, headers, "Codigo") + " "
+                            + csvCell(row, headers, "Codigo_Backup"))
+                            .toLowerCase(Locale.ROOT);
+                    if (!needle.isEmpty() && !searchable.contains(needle)) continue;
                     products.add(new Models.Product(
-                            row.optString("id"), row.optString("name"),
-                            row.optString("category"), row.optDouble("cashPrice"),
-                            row.optDouble("cardPrice"), row.optInt("stock"),
-                            row.optString("photo")
+                            id, name, csvCell(row, headers, "Categoría"),
+                            csvNumber(csvCell(row, headers, "Precio Efectivo")),
+                            csvNumber(csvCell(row, headers, "Precio en 3 Cuotas")),
+                            (int) csvNumber(csvCell(row, headers, "Stock Actual")),
+                            csvCell(row, headers, "Foto")
                     ));
                 }
                 callback.onSuccess(products);
             } catch (Exception e) {
-                callback.onError("No se pudo abrir el catálogo de productos");
+                callback.onError("No se pudo sincronizar la pestaña Artículos");
             }
         }).start();
+    }
+
+    private static String csvCell(List<String> row,
+                                  java.util.Map<String, Integer> headers,
+                                  String name) {
+        Integer index = headers.get(name);
+        return index == null || index >= row.size() ? "" : row.get(index).trim();
+    }
+
+    private static double csvNumber(String value) {
+        try {
+            String normalized = value.replace("$", "").replace(" ", "");
+            if (normalized.contains(",")) {
+                normalized = normalized.replace(".", "").replace(",", ".");
+            }
+            return Double.parseDouble(normalized);
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
+    private static List<List<String>> parseCsv(String source) {
+        List<List<String>> rows = new ArrayList<>();
+        List<String> row = new ArrayList<>();
+        StringBuilder cell = new StringBuilder();
+        boolean quoted = false;
+        for (int i = 0; i < source.length(); i++) {
+            char current = source.charAt(i);
+            if (current == '"') {
+                if (quoted && i + 1 < source.length() && source.charAt(i + 1) == '"') {
+                    cell.append('"');
+                    i++;
+                } else {
+                    quoted = !quoted;
+                }
+            } else if (current == ',' && !quoted) {
+                row.add(cell.toString());
+                cell.setLength(0);
+            } else if ((current == '\n' || current == '\r') && !quoted) {
+                if (current == '\r' && i + 1 < source.length()
+                        && source.charAt(i + 1) == '\n') i++;
+                row.add(cell.toString());
+                cell.setLength(0);
+                rows.add(row);
+                row = new ArrayList<>();
+            } else {
+                cell.append(current);
+            }
+        }
+        if (cell.length() > 0 || !row.isEmpty()) {
+            row.add(cell.toString());
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    private static String requestText(String target) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(target).openConnection();
+        connection.setConnectTimeout(15000);
+        connection.setReadTimeout(30000);
+        connection.setRequestProperty("Accept", "text/csv");
+        int status = connection.getResponseCode();
+        if (status < 200 || status >= 300) {
+            throw new IllegalStateException("Google Sheets respondió " + status);
+        }
+        StringBuilder text = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                connection.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) text.append(line).append('\n');
+        }
+        return text.toString();
     }
 
     void createSale(Models.Sale sale, Callback<String> callback) {
