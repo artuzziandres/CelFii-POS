@@ -14,9 +14,16 @@ final class Models {
         final double cardPrice;
         final int stock;
         final String photo;
+        final String code;
+        final String backupCode;
 
         Product(String id, String name, String category, double cashPrice,
                 double cardPrice, int stock, String photo) {
+            this(id, name, category, cashPrice, cardPrice, stock, photo, "", "");
+        }
+
+        Product(String id, String name, String category, double cashPrice,
+                double cardPrice, int stock, String photo, String code, String backupCode) {
             this.id = id;
             this.name = name;
             this.category = category;
@@ -24,6 +31,8 @@ final class Models {
             this.cardPrice = cardPrice;
             this.stock = stock;
             this.photo = photo;
+            this.code = code;
+            this.backupCode = backupCode;
         }
 
         String imageUrl() {
