@@ -13,9 +13,9 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@drawable/logo_celfii"
-        android:label="Cel-Fii POS"
-        android:roundIcon="@drawable/logo_celfii"
+        android:icon="@mipmap/ic_launcher"
+        android:label="Cel-Fii Ventas"
+        android:roundIcon="@mipmap/ic_launcher"
         android:theme="@style/Theme.CelFii">
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"
