@@ -484,6 +484,10 @@ public final class MainActivity extends Activity {
         scanParams.leftMargin = dp(8);
         actions.addView(scan, scanParams);
         body.addView(actions, marginTopBottom(8, 14));
+        search.setOnEditorActionListener((view, actionId, event) -> {
+            loadProducts();
+            return true;
+        });
     }
 
     private void scanBarcode() {
@@ -503,11 +507,36 @@ public final class MainActivity extends Activity {
                     String value = barcode.getRawValue();
                     if (value != null) {
                         search.setText(value);
-                        loadProducts();
+                        loadScannedProduct(value);
                     }
                 })
                 .addOnFailureListener(error ->
                         toast("No se pudo abrir el lector: " + error.getMessage()));
+    }
+
+    private void loadScannedProduct(String barcode) {
+        productList.removeAllViews();
+        productList.addView(text("Buscando código " + barcode + "…",
+                13, MUTED, false));
+        api.loadProducts(barcode, new ApiClient.Callback<>() {
+            @Override public void onSuccess(List<Models.Product> value) {
+                runOnUiThread(() -> {
+                    if (!productsManagement && value.size() == 1) {
+                        addProduct(value.get(0));
+                        productList.removeAllViews();
+                        productList.addView(text(
+                                "Producto agregado. Escaneá el siguiente artículo.",
+                                13, LIME, true));
+                    } else {
+                        renderProducts(value);
+                    }
+                });
+            }
+
+            @Override public void onError(String message) {
+                runOnUiThread(() -> toast(message));
+            }
+        });
     }
 
     private void showProductDetails(Models.Product product) {
