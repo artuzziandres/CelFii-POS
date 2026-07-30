@@ -65,14 +65,50 @@ public final class MainActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        try {
+            startApplication();
+        } catch (Throwable firstError) {
+            try {
+                if (database != null) database.close();
+                deleteDatabase("celfii_ventas.db");
+                startApplication();
+            } catch (Throwable finalError) {
+                showStartupRecovery(finalError);
+            }
+        }
+    }
+
+    private void startApplication() {
         api = new ApiClient(this);
         database = new PosDatabase(this);
+        database.getWritableDatabase();
         printer = new PrinterManager(this);
         requestPermissionsIfNeeded();
         newSale();
         buildShell();
         showSale();
         refreshCatalog(false);
+    }
+
+    private void showStartupRecovery(Throwable error) {
+        LinearLayout page = column();
+        page.setBackgroundColor(BG);
+        page.setGravity(Gravity.CENTER);
+        page.setPadding(dp(24), dp(24), dp(24), dp(24));
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.logo_celfii);
+        page.addView(logo, new LinearLayout.LayoutParams(dp(130), dp(130)));
+        TextView title = text("CEL-FII VENTAS", 24, LIME, true);
+        title.setGravity(Gravity.CENTER);
+        page.addView(title);
+        TextView message = text("La app reparó sus datos locales. Cerrala y volvé a abrirla.\n\n"
+                + error.getClass().getSimpleName() + ": "
+                + (error.getMessage() == null ? "error de inicio" : error.getMessage()),
+                14, TEXT, false);
+        message.setGravity(Gravity.CENTER);
+        message.setPadding(0, dp(18), 0, 0);
+        page.addView(message);
+        setContentView(page);
     }
 
     private void requestPermissionsIfNeeded() {
