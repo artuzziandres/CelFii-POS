@@ -13,8 +13,8 @@ android {
         applicationId = "com.celfii.pos"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
 
         buildConfigField("String", "CELFII_API_URL", "\"${apiUrl.get()}\"")
         buildConfigField("String", "CELFII_API_TOKEN", "\"${apiToken.get()}\"")
@@ -42,4 +42,5 @@ android {
 
 dependencies {
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    implementation("com.github.bumptech.glide:glide:4.16.0")
 }
