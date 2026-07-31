@@ -7,8 +7,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.content.pm.PackageManager;
-import android.print.PrintAttributes;
-import android.print.PrintManager;
+import android.os.Build;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
@@ -27,15 +26,13 @@ import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
 
-import com.google.zxing.BarcodeFormat;
 import com.journeyapps.barcodescanner.BarcodeCallback;
 import com.journeyapps.barcodescanner.BarcodeResult;
-import com.journeyapps.barcodescanner.BarcodeView;
+import com.journeyapps.barcodescanner.DecoratedBarcodeView;
 import com.journeyapps.barcodescanner.DefaultDecoderFactory;
 
+import java.nio.charset.Charset;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -66,10 +63,12 @@ public final class MainActivity extends Activity {
     private PhotoMap photoMap;
     private ProductAdapter activeAdapter;
     private EditText activeSearch;
-    private WebView printWebView;
+    private PrinterManager printer;
+    private byte[] pendingTicket;
     private boolean productsTab;
     private String selectedSeller = "Andres";
     private static final int CAMERA_REQUEST = 501;
+    private static final int BLUETOOTH_REQUEST = 502;
     private static final String[] SELLERS = {
             "Andres", "Maxi", "Gaby", "Facu", "Malena", "Benjamin", "Alejandra", "Elio"
     };
@@ -80,6 +79,7 @@ public final class MainActivity extends Activity {
         saleStore = new SaleStore(this);
         imageLoader = new ImageLoader();
         photoMap = new PhotoMap(this);
+        printer = new PrinterManager(this);
         renderApplication();
         showSale();
         synchronize(false);
@@ -218,18 +218,16 @@ public final class MainActivity extends Activity {
 
     private void openBarcodeScanner() {
         try {
-            BarcodeView camera = new BarcodeView(this);
+            DecoratedBarcodeView camera = new DecoratedBarcodeView(this);
             camera.setMinimumHeight(dp(420));
-            camera.setDecoderFactory(new DefaultDecoderFactory(java.util.Arrays.asList(
-                    BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A,
-                    BarcodeFormat.UPC_E, BarcodeFormat.CODE_128, BarcodeFormat.CODE_39,
-                    BarcodeFormat.ITF)));
+            camera.setStatusText("Mantené el código dentro del recuadro");
+            camera.setDecoderFactory(new DefaultDecoderFactory());
             AlertDialog dialog = new AlertDialog.Builder(this)
                     .setTitle("Enfocá el código de barras")
                     .setView(camera)
                     .setNegativeButton("Cerrar", null)
                     .create();
-            camera.decodeSingle(new BarcodeCallback() {
+            camera.decodeContinuous(new BarcodeCallback() {
                 @Override public void barcodeResult(BarcodeResult result) {
                     camera.pause();
                     if (activeSearch != null) activeSearch.setText(result.getText());
@@ -252,6 +250,14 @@ public final class MainActivity extends Activity {
             openBarcodeScanner();
         } else if (requestCode == CAMERA_REQUEST) {
             toast("La cámara es necesaria para escanear códigos");
+        } else if (requestCode == BLUETOOTH_REQUEST && grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED && pendingTicket != null) {
+            byte[] ticket = pendingTicket;
+            pendingTicket = null;
+            printDirect(ticket);
+        } else if (requestCode == BLUETOOTH_REQUEST) {
+            pendingTicket = null;
+            toast("Se necesita permiso de Bluetooth para imprimir");
         }
     }
 
@@ -340,38 +346,13 @@ public final class MainActivity extends Activity {
     private void printCurrentSale() {
         StringBuilder rows = new StringBuilder();
         for (CartLine line : cart.values()) {
-            rows.append("<tr><td>").append(html(line.product.name)).append("</td><td>")
-                    .append(line.quantity).append("</td><td>")
-                    .append(html(money(line.product.cashPrice))).append("</td><td>")
-                    .append(html(money(line.total()))).append("</td></tr>");
+            rows.append(line.product.name).append('\n')
+                    .append(line.quantity).append(" x ").append(money(line.product.cashPrice))
+                    .append("    ").append(money(line.total())).append('\n');
         }
         String date = new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
                 .format(new Date());
-        String html = "<html><head><meta charset='utf-8'><style>"
-                + "body{font-family:sans-serif;color:#111;padding:24px}h1{margin-bottom:2px}"
-                + "table{width:100%;border-collapse:collapse;margin-top:20px}"
-                + "th,td{padding:8px;border-bottom:1px solid #ccc;text-align:left}"
-                + "th:nth-child(n+2),td:nth-child(n+2){text-align:right}"
-                + ".total{text-align:right;font-size:24px;font-weight:bold;margin-top:22px}"
-                + "</style></head><body><h1>CEL-FII</h1><div>Venta · " + date + "</div>"
-                + "<table><tr><th>Producto</th><th>Cant.</th><th>Precio</th><th>Subtotal</th></tr>"
-                + rows + "</table><div class='total'>TOTAL: " + html(money(cartTotal()))
-                + "</div></body></html>";
-        printWebView = new WebView(this);
-        printWebView.setWebViewClient(new WebViewClient() {
-            @Override public void onPageFinished(WebView view, String url) {
-                PrintManager manager = (PrintManager) getSystemService(PRINT_SERVICE);
-                manager.print("Venta Cel-Fii", view.createPrintDocumentAdapter("Venta Cel-Fii"),
-                        new PrintAttributes.Builder().build());
-                printWebView = null;
-            }
-        });
-        printWebView.loadDataWithBaseURL(null, html, "text/HTML", "UTF-8", null);
-    }
-
-    private static String html(String value) {
-        return value.replace("&", "&amp;").replace("<", "&lt;")
-                .replace(">", "&gt;").replace("\\\"", "&quot;");
+        printDirect(ticketBytes(date, selectedSeller, "", rows.toString(), cartTotal()));
     }
 
     private void showPayment() {
@@ -496,32 +477,48 @@ public final class MainActivity extends Activity {
     }
 
     private void printSavedSale(SaleStore.Entry sale) {
-        String details = sale.details == null ? "" : sale.details;
-        String body = "<html><head><meta charset='utf-8'><style>"
-                + "body{font-family:sans-serif;color:#111;padding:24px}"
-                + "pre{font-family:sans-serif;white-space:pre-wrap;line-height:1.5}"
-                + ".total{text-align:right;font-size:24px;font-weight:bold;margin-top:22px}"
-                + "</style></head><body><h1>CEL-FII</h1>"
-                + "<div>Fecha: " + html(sale.date) + "</div>"
-                + "<div>Vendedor: " + html(sale.seller) + "</div>"
-                + "<div>Pago: " + html(sale.payment) + "</div><hr>"
-                + "<pre>" + html(details) + "</pre>"
-                + "<div class='total'>TOTAL: " + html(money(sale.total)) + "</div>"
-                + "</body></html>";
-        printDocument(body);
+        printDirect(ticketBytes(sale.date, sale.seller, sale.payment,
+                sale.details == null ? "" : sale.details, sale.total));
     }
 
-    private void printDocument(String body) {
-        printWebView = new WebView(this);
-        printWebView.setWebViewClient(new WebViewClient() {
-            @Override public void onPageFinished(WebView view, String url) {
-                PrintManager manager = (PrintManager) getSystemService(PRINT_SERVICE);
-                manager.print("Venta Cel-Fii", view.createPrintDocumentAdapter("Venta Cel-Fii"),
-                        new PrintAttributes.Builder().build());
-                printWebView = null;
+    private void printDirect(byte[] ticket) {
+        if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(
+                Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            pendingTicket = ticket;
+            requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT},
+                    BLUETOOTH_REQUEST);
+            return;
+        }
+        toast("Imprimiendo…");
+        printer.printPreferred(ticket, new PrinterManager.PrintCallback() {
+            @Override public void onSuccess() {
+                runOnUiThread(() -> toast("Ticket impreso correctamente"));
+            }
+            @Override public void onError(String message) {
+                runOnUiThread(() -> toast(message));
             }
         });
-        printWebView.loadDataWithBaseURL(null, body, "text/HTML", "UTF-8", null);
+    }
+
+    private byte[] ticketBytes(String date, String seller, String payment,
+                               String details, double total) {
+        String line = "--------------------------------";
+        String text = "       CEL-FII TECNOLOGIA\n"
+                + "      San Rafael, Mendoza\n" + line + "\n"
+                + "Fecha: " + date + "\nVendedor: " + seller + "\n"
+                + (payment.isEmpty() ? "" : "Pago: " + payment + "\n")
+                + line + "\n" + details + "\n" + line + "\n"
+                + "TOTAL: " + money(total) + "\n" + line + "\n"
+                + "   Gracias por elegir Cel-Fii\n"
+                + "        www.cel-fii.com\n\n\n";
+        byte[] init = new byte[]{0x1B, 0x40};
+        byte[] content = text.getBytes(Charset.forName("CP850"));
+        byte[] feed = new byte[]{0x1B, 0x64, 0x03};
+        byte[] result = new byte[init.length + content.length + feed.length];
+        System.arraycopy(init, 0, result, 0, init.length);
+        System.arraycopy(content, 0, result, init.length, content.length);
+        System.arraycopy(feed, 0, result, init.length + content.length, feed.length);
+        return result;
     }
 
     private void showMore() {
