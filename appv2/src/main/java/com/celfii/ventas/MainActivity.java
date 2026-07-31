@@ -30,8 +30,11 @@ import android.widget.Toast;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
-import com.google.zxing.integration.android.IntentIntegrator;
-import com.google.zxing.integration.android.IntentResult;
+import com.google.zxing.BarcodeFormat;
+import com.journeyapps.barcodescanner.BarcodeCallback;
+import com.journeyapps.barcodescanner.BarcodeResult;
+import com.journeyapps.barcodescanner.BarcodeView;
+import com.journeyapps.barcodescanner.DefaultDecoderFactory;
 
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
@@ -215,29 +218,30 @@ public final class MainActivity extends Activity {
 
     private void openBarcodeScanner() {
         try {
-            IntentIntegrator scanner = new IntentIntegrator(this);
-            scanner.setCaptureActivity(BarcodeScannerActivity.class);
-            scanner.setDesiredBarcodeFormats(IntentIntegrator.PRODUCT_CODE_TYPES);
-            scanner.setPrompt("Enfocá el código de barras");
-            scanner.setBeepEnabled(true);
-            scanner.setBarcodeImageEnabled(false);
-            scanner.setOrientationLocked(true);
-            scanner.initiateScan();
+            BarcodeView camera = new BarcodeView(this);
+            camera.setMinimumHeight(dp(420));
+            camera.setDecoderFactory(new DefaultDecoderFactory(java.util.Arrays.asList(
+                    BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A,
+                    BarcodeFormat.UPC_E, BarcodeFormat.CODE_128, BarcodeFormat.CODE_39,
+                    BarcodeFormat.ITF)));
+            AlertDialog dialog = new AlertDialog.Builder(this)
+                    .setTitle("Enfocá el código de barras")
+                    .setView(camera)
+                    .setNegativeButton("Cerrar", null)
+                    .create();
+            camera.decodeSingle(new BarcodeCallback() {
+                @Override public void barcodeResult(BarcodeResult result) {
+                    camera.pause();
+                    if (activeSearch != null) activeSearch.setText(result.getText());
+                    dialog.dismiss();
+                }
+            });
+            dialog.setOnShowListener(value -> camera.resume());
+            dialog.setOnDismissListener(value -> camera.pause());
+            dialog.show();
         } catch (RuntimeException error) {
             toast("No se pudo iniciar la cámara. Revisá el permiso e intentá nuevamente.");
         }
-    }
-
-    @Override protected void onActivityResult(int requestCode, int resultCode,
-                                               android.content.Intent data) {
-        IntentResult result = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
-        if (result != null) {
-            if (result.getContents() != null && activeSearch != null) {
-                activeSearch.setText(result.getContents());
-            }
-            return;
-        }
-        super.onActivityResult(requestCode, resultCode, data);
     }
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions,
@@ -486,8 +490,38 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("Detalle de venta")
                 .setMessage(message)
-                .setPositiveButton("Cerrar", null)
+                .setNegativeButton("Cerrar", null)
+                .setPositiveButton("Imprimir", (d, w) -> printSavedSale(sale))
                 .show();
+    }
+
+    private void printSavedSale(SaleStore.Entry sale) {
+        String details = sale.details == null ? "" : sale.details;
+        String body = "<html><head><meta charset='utf-8'><style>"
+                + "body{font-family:sans-serif;color:#111;padding:24px}"
+                + "pre{font-family:sans-serif;white-space:pre-wrap;line-height:1.5}"
+                + ".total{text-align:right;font-size:24px;font-weight:bold;margin-top:22px}"
+                + "</style></head><body><h1>CEL-FII</h1>"
+                + "<div>Fecha: " + html(sale.date) + "</div>"
+                + "<div>Vendedor: " + html(sale.seller) + "</div>"
+                + "<div>Pago: " + html(sale.payment) + "</div><hr>"
+                + "<pre>" + html(details) + "</pre>"
+                + "<div class='total'>TOTAL: " + html(money(sale.total)) + "</div>"
+                + "</body></html>";
+        printDocument(body);
+    }
+
+    private void printDocument(String body) {
+        printWebView = new WebView(this);
+        printWebView.setWebViewClient(new WebViewClient() {
+            @Override public void onPageFinished(WebView view, String url) {
+                PrintManager manager = (PrintManager) getSystemService(PRINT_SERVICE);
+                manager.print("Venta Cel-Fii", view.createPrintDocumentAdapter("Venta Cel-Fii"),
+                        new PrintAttributes.Builder().build());
+                printWebView = null;
+            }
+        });
+        printWebView.loadDataWithBaseURL(null, body, "text/HTML", "UTF-8", null);
     }
 
     private void showMore() {
