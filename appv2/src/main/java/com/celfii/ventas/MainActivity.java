@@ -209,12 +209,18 @@ public final class MainActivity extends Activity {
     }
 
     private void openBarcodeScanner() {
-        IntentIntegrator scanner = new IntentIntegrator(this);
-        scanner.setDesiredBarcodeFormats(IntentIntegrator.PRODUCT_CODE_TYPES);
-        scanner.setPrompt("Enfocá el código de barras");
-        scanner.setBeepEnabled(true);
-        scanner.setOrientationLocked(false);
-        scanner.initiateScan();
+        try {
+            IntentIntegrator scanner = new IntentIntegrator(this);
+            scanner.setCaptureActivity(BarcodeScannerActivity.class);
+            scanner.setDesiredBarcodeFormats(IntentIntegrator.PRODUCT_CODE_TYPES);
+            scanner.setPrompt("Enfocá el código de barras");
+            scanner.setBeepEnabled(true);
+            scanner.setBarcodeImageEnabled(false);
+            scanner.setOrientationLocked(true);
+            scanner.initiateScan();
+        } catch (RuntimeException error) {
+            toast("No se pudo iniciar la cámara. Revisá el permiso e intentá nuevamente.");
+        }
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode,
