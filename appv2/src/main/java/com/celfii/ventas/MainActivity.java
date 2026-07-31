@@ -26,10 +26,8 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.google.mlkit.vision.barcode.common.Barcode;
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanner;
-import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions;
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
+import com.google.zxing.integration.android.IntentIntegrator;
+import com.google.zxing.integration.android.IntentResult;
 
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
@@ -126,26 +124,6 @@ public final class MainActivity extends Activity {
         ticket.setOnClickListener(v -> showCart());
         titleRow.addView(ticket, new LinearLayout.LayoutParams(dp(126), dp(48)));
         page.addView(titleRow);
-        LinearLayout sellerRow = row();
-        sellerRow.setGravity(Gravity.CENTER_VERTICAL);
-        sellerRow.addView(label("Vendedor", 12, MUTED, true));
-        Spinner sellerSpinner = new Spinner(this);
-        sellerSpinner.setAdapter(new ArrayAdapter<>(this,
-                android.R.layout.simple_spinner_dropdown_item, SELLERS));
-        for (int i = 0; i < SELLERS.length; i++) {
-            if (SELLERS[i].equals(selectedSeller)) sellerSpinner.setSelection(i);
-        }
-        sellerSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view,
-                                                  int position, long id) {
-                selectedSeller = SELLERS[position];
-            }
-            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
-        });
-        LinearLayout.LayoutParams sellerParams = new LinearLayout.LayoutParams(0, dp(46), 1);
-        sellerParams.leftMargin = dp(8);
-        sellerRow.addView(sellerSpinner, sellerParams);
-        page.addView(sellerRow);
         TextView hint = label(catalog.isEmpty() ? "Cargando catálogo…"
                 : catalog.size() + " productos disponibles", 12, MUTED, false);
         hint.setPadding(0, 0, 0, dp(8));
@@ -231,19 +209,24 @@ public final class MainActivity extends Activity {
     }
 
     private void openBarcodeScanner() {
-        GmsBarcodeScannerOptions options = new GmsBarcodeScannerOptions.Builder()
-                .setBarcodeFormats(Barcode.FORMAT_EAN_13, Barcode.FORMAT_EAN_8,
-                        Barcode.FORMAT_UPC_A, Barcode.FORMAT_UPC_E,
-                        Barcode.FORMAT_CODE_128, Barcode.FORMAT_CODE_39)
-                .enableAutoZoom()
-                .build();
-        GmsBarcodeScanner scanner = GmsBarcodeScanning.getClient(this, options);
-        scanner.startScan()
-                .addOnSuccessListener(barcode -> {
-                    String code = barcode.getRawValue();
-                    if (code != null && activeSearch != null) activeSearch.setText(code);
-                })
-                .addOnFailureListener(error -> toast("No se pudo abrir el escáner"));
+        IntentIntegrator scanner = new IntentIntegrator(this);
+        scanner.setDesiredBarcodeFormats(IntentIntegrator.PRODUCT_CODE_TYPES);
+        scanner.setPrompt("Enfocá el código de barras");
+        scanner.setBeepEnabled(true);
+        scanner.setOrientationLocked(false);
+        scanner.initiateScan();
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode,
+                                               android.content.Intent data) {
+        IntentResult result = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
+        if (result != null) {
+            if (result.getContents() != null && activeSearch != null) {
+                activeSearch.setText(result.getContents());
+            }
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
     }
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions,
@@ -347,6 +330,16 @@ public final class MainActivity extends Activity {
         methods.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
                 new String[]{"Efectivo", "Transferencia", "Posnet"}));
         box.addView(methods);
+        TextView sellerLabel = label("Vendedor", 12, MUTED, true);
+        sellerLabel.setPadding(0, dp(12), 0, dp(4));
+        box.addView(sellerLabel);
+        Spinner sellerSpinner = new Spinner(this);
+        sellerSpinner.setAdapter(new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item, SELLERS));
+        for (int i = 0; i < SELLERS.length; i++) {
+            if (SELLERS[i].equals(selectedSeller)) sellerSpinner.setSelection(i);
+        }
+        box.addView(sellerSpinner);
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Cobrar " + money(cartTotal())).setView(box)
                 .setNegativeButton("Cancelar", null)
@@ -354,6 +347,7 @@ public final class MainActivity extends Activity {
         dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
                 .setOnClickListener(v -> {
                     String method = String.valueOf(methods.getSelectedItem());
+                    selectedSeller = String.valueOf(sellerSpinner.getSelectedItem());
                     saveSale(method);
                     dialog.dismiss();
                 }));
