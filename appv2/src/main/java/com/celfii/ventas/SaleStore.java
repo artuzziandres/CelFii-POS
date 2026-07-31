@@ -15,12 +15,14 @@ final class SaleStore {
         preferences = context.getSharedPreferences("celfii_ventas_nueva", Context.MODE_PRIVATE);
     }
 
-    void add(String id, String date, double total, String payment, int itemCount) {
+    void add(String id, String date, double total, String payment, int itemCount,
+             String details) {
         try {
             JSONArray current = new JSONArray(preferences.getString("sales", "[]"));
             JSONArray next = new JSONArray();
             next.put(new JSONObject().put("id", id).put("date", date).put("total", total)
-                    .put("payment", payment).put("items", itemCount));
+                    .put("payment", payment).put("items", itemCount)
+                    .put("details", details));
             for (int i = 0; i < current.length() && i < 99; i++) next.put(current.get(i));
             preferences.edit().putString("sales", next.toString()).apply();
         } catch (Exception ignored) {}
@@ -33,19 +35,21 @@ final class SaleStore {
             for (int i = 0; i < rows.length(); i++) {
                 JSONObject row = rows.getJSONObject(i);
                 result.add(new Entry(row.optString("id"), row.optString("date"),
-                        row.optDouble("total"), row.optString("payment"), row.optInt("items")));
+                        row.optDouble("total"), row.optString("payment"), row.optInt("items"),
+                        row.optString("details")));
             }
         } catch (Exception ignored) {}
         return result;
     }
 
     static final class Entry {
-        final String id, date, payment;
+        final String id, date, payment, details;
         final double total;
         final int items;
-        Entry(String id, String date, double total, String payment, int items) {
+        Entry(String id, String date, double total, String payment, int items,
+              String details) {
             this.id = id; this.date = date; this.total = total;
-            this.payment = payment; this.items = items;
+            this.payment = payment; this.items = items; this.details = details;
         }
     }
 }
