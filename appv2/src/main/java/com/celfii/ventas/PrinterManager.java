@@ -35,7 +35,6 @@ final class PrinterManager {
                 List<BluetoothDevice> devices = orderedDevices(adapter.getBondedDevices());
                 if (devices.isEmpty()) throw new IllegalStateException(
                         "No se encontró la TP.POS58 emparejada");
-                adapter.cancelDiscovery();
                 Exception lastError = null;
                 for (BluetoothDevice device : devices) {
                     try {
