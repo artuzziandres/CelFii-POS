@@ -16,12 +16,18 @@ import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import com.google.mlkit.vision.barcode.common.Barcode;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanner;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
 
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
@@ -49,6 +55,7 @@ public final class MainActivity extends Activity {
     private final Map<String, CartLine> cart = new LinkedHashMap<>();
     private CatalogRepository catalogRepository;
     private SaleStore saleStore;
+    private ImageLoader imageLoader;
     private ProductAdapter activeAdapter;
     private EditText activeSearch;
     private boolean productsTab;
@@ -57,6 +64,7 @@ public final class MainActivity extends Activity {
         super.onCreate(state);
         catalogRepository = new CatalogRepository(this);
         saleStore = new SaleStore(this);
+        imageLoader = new ImageLoader();
         renderApplication();
         showSale();
         synchronize(false);
@@ -153,6 +161,7 @@ public final class MainActivity extends Activity {
     }
 
     private View searchBox() {
+        LinearLayout searchRow = row();
         activeSearch = new EditText(this);
         activeSearch.setHint("Buscar nombre, modelo o código");
         activeSearch.setHintTextColor(MUTED);
@@ -168,10 +177,36 @@ public final class MainActivity extends Activity {
             }
             @Override public void afterTextChanged(Editable s) {}
         });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(52));
-        params.bottomMargin = dp(8);
-        activeSearch.setLayoutParams(params);
-        return activeSearch;
+        searchRow.addView(activeSearch, new LinearLayout.LayoutParams(0, dp(52), 1));
+        ImageButton scanner = new ImageButton(this);
+        scanner.setImageResource(R.drawable.ic_scan);
+        scanner.setContentDescription("Escanear código de barras");
+        scanner.setBackgroundColor(LIME);
+        scanner.setPadding(dp(14), dp(14), dp(14), dp(14));
+        scanner.setOnClickListener(v -> scanBarcode());
+        LinearLayout.LayoutParams scanParams = new LinearLayout.LayoutParams(dp(56), dp(52));
+        scanParams.leftMargin = dp(7);
+        searchRow.addView(scanner, scanParams);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, dp(52));
+        rowParams.bottomMargin = dp(8);
+        searchRow.setLayoutParams(rowParams);
+        return searchRow;
+    }
+
+    private void scanBarcode() {
+        GmsBarcodeScannerOptions options = new GmsBarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_EAN_13, Barcode.FORMAT_EAN_8,
+                        Barcode.FORMAT_UPC_A, Barcode.FORMAT_UPC_E,
+                        Barcode.FORMAT_CODE_128, Barcode.FORMAT_CODE_39)
+                .enableAutoZoom()
+                .build();
+        GmsBarcodeScanner scanner = GmsBarcodeScanning.getClient(this, options);
+        scanner.startScan()
+                .addOnSuccessListener(barcode -> {
+                    String code = barcode.getRawValue();
+                    if (code != null && activeSearch != null) activeSearch.setText(code);
+                })
+                .addOnFailureListener(error -> toast("No se pudo abrir el escáner"));
     }
 
     private ListView productList() {
@@ -290,7 +325,16 @@ public final class MainActivity extends Activity {
     private void saveSale(String payment) {
         String id = UUID.randomUUID().toString();
         String date = new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(new Date());
-        saleStore.add(id, date, cartTotal(), payment, itemCount());
+        StringBuilder details = new StringBuilder();
+        for (CartLine line : cart.values()) {
+            if (details.length() > 0) details.append("\n\n");
+            details.append(line.product.name)
+                    .append("\n")
+                    .append(line.quantity).append(" × ")
+                    .append(money(line.product.cashPrice))
+                    .append(" = ").append(money(line.total()));
+        }
+        saleStore.add(id, date, cartTotal(), payment, itemCount(), details.toString());
         cart.clear();
         toast("Venta guardada correctamente");
         showSale();
@@ -326,9 +370,29 @@ public final class MainActivity extends Activity {
                     return card;
                 }
             });
+            list.setOnItemClickListener((parent, view, position, id) ->
+                    showSaleDetails(sales.get(position)));
             page.addView(list, new LinearLayout.LayoutParams(-1, 0, 1));
         }
         content.addView(page);
+    }
+
+    private void showSaleDetails(SaleStore.Entry sale) {
+        String shortId = sale.id.length() > 8 ? sale.id.substring(0, 8).toUpperCase() : sale.id;
+        String products = sale.details == null || sale.details.trim().isEmpty()
+                ? "El detalle de productos no estaba disponible en esta venta anterior."
+                : sale.details;
+        String message = "Venta #" + shortId
+                + "\nFecha: " + sale.date
+                + "\nMedio de pago: " + sale.payment
+                + "\nArtículos: " + sale.items
+                + "\n\n" + products
+                + "\n\nTOTAL: " + money(sale.total);
+        new AlertDialog.Builder(this)
+                .setTitle("Detalle de venta")
+                .setMessage(message)
+                .setPositiveButton("Cerrar", null)
+                .show();
     }
 
     private void showMore() {
@@ -381,8 +445,8 @@ public final class MainActivity extends Activity {
             Product product = getItem(position);
             LinearLayout card = panel();
             ImageView image = new ImageView(MainActivity.this);
-            image.setImageResource(R.drawable.logo_celfii);
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            imageLoader.load(image, product.imageUrl());
             card.addView(image, new LinearLayout.LayoutParams(dp(58), dp(58)));
             LinearLayout copy = column();
             copy.setPadding(dp(10), 0, dp(5), 0);
