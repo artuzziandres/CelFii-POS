@@ -8,8 +8,8 @@ android {
         applicationId = "com.celfii.ventas"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.5.3"
+        versionCode = 10
+        versionName = "0.5.4"
     }
 
     buildTypes {
