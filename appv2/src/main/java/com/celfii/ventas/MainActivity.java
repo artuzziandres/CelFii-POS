@@ -330,8 +330,7 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("Ticket · " + money(cartTotal()))
                 .setView(scroll)
                 .setNegativeButton("Cerrar", null)
-                .setNeutralButton("Imprimir", (d, w) -> printCurrentSale())
-                .setPositiveButton("Cobrar", (d, w) -> showPayment()).show();
+                .setPositiveButton("Imprimir", (d, w) -> printCurrentSale()).show();
     }
 
     private void printCurrentSale() {
@@ -417,8 +416,20 @@ public final class MainActivity extends Activity {
         }
         saleStore.add(id, date, cartTotal(), payment, itemCount(), details.toString(),
                 selectedSeller);
+        new AlertDialog.Builder(this)
+                .setTitle("Venta realizada")
+                .setMessage("La venta se guardó correctamente.")
+                .setCancelable(false)
+                .setNegativeButton("Cerrar", (d, w) -> finishCompletedSale())
+                .setPositiveButton("Imprimir", (d, w) -> {
+                    printCurrentSale();
+                    finishCompletedSale();
+                })
+                .show();
+    }
+
+    private void finishCompletedSale() {
         cart.clear();
-        toast("Venta guardada correctamente");
         showSale();
     }
 
