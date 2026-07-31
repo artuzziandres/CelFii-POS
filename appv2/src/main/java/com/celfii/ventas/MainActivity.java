@@ -92,7 +92,7 @@ public final class MainActivity extends Activity {
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(14), dp(8), dp(14), dp(8));
         ImageView logo = new ImageView(this);
-        logo.setImageResource(R.drawable.logo_celfii);
+        logo.setImageResource(R.drawable.logo_celfii_app);
         logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
         header.addView(logo, new LinearLayout.LayoutParams(dp(58), dp(58)));
         LinearLayout brand = column();
