@@ -1,10 +1,12 @@
 package com.celfii.ventas;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.content.pm.PackageManager;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
@@ -56,15 +58,22 @@ public final class MainActivity extends Activity {
     private CatalogRepository catalogRepository;
     private SaleStore saleStore;
     private ImageLoader imageLoader;
+    private PhotoMap photoMap;
     private ProductAdapter activeAdapter;
     private EditText activeSearch;
     private boolean productsTab;
+    private String selectedSeller = "Andres";
+    private static final int CAMERA_REQUEST = 501;
+    private static final String[] SELLERS = {
+            "Andres", "Maxi", "Gaby", "Facu", "Malena", "Benjamin", "Alejandra", "Elio"
+    };
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         catalogRepository = new CatalogRepository(this);
         saleStore = new SaleStore(this);
         imageLoader = new ImageLoader();
+        photoMap = new PhotoMap(this);
         renderApplication();
         showSale();
         synchronize(false);
@@ -117,6 +126,26 @@ public final class MainActivity extends Activity {
         ticket.setOnClickListener(v -> showCart());
         titleRow.addView(ticket, new LinearLayout.LayoutParams(dp(126), dp(48)));
         page.addView(titleRow);
+        LinearLayout sellerRow = row();
+        sellerRow.setGravity(Gravity.CENTER_VERTICAL);
+        sellerRow.addView(label("Vendedor", 12, MUTED, true));
+        Spinner sellerSpinner = new Spinner(this);
+        sellerSpinner.setAdapter(new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item, SELLERS));
+        for (int i = 0; i < SELLERS.length; i++) {
+            if (SELLERS[i].equals(selectedSeller)) sellerSpinner.setSelection(i);
+        }
+        sellerSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view,
+                                                  int position, long id) {
+                selectedSeller = SELLERS[position];
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+        });
+        LinearLayout.LayoutParams sellerParams = new LinearLayout.LayoutParams(0, dp(46), 1);
+        sellerParams.leftMargin = dp(8);
+        sellerRow.addView(sellerSpinner, sellerParams);
+        page.addView(sellerRow);
         TextView hint = label(catalog.isEmpty() ? "Cargando catálogo…"
                 : catalog.size() + " productos disponibles", 12, MUTED, false);
         hint.setPadding(0, 0, 0, dp(8));
@@ -194,6 +223,14 @@ public final class MainActivity extends Activity {
     }
 
     private void scanBarcode() {
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_REQUEST);
+            return;
+        }
+        openBarcodeScanner();
+    }
+
+    private void openBarcodeScanner() {
         GmsBarcodeScannerOptions options = new GmsBarcodeScannerOptions.Builder()
                 .setBarcodeFormats(Barcode.FORMAT_EAN_13, Barcode.FORMAT_EAN_8,
                         Barcode.FORMAT_UPC_A, Barcode.FORMAT_UPC_E,
@@ -207,6 +244,17 @@ public final class MainActivity extends Activity {
                     if (code != null && activeSearch != null) activeSearch.setText(code);
                 })
                 .addOnFailureListener(error -> toast("No se pudo abrir el escáner"));
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                                                      int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == CAMERA_REQUEST && grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            openBarcodeScanner();
+        } else if (requestCode == CAMERA_REQUEST) {
+            toast("La cámara es necesaria para escanear códigos");
+        }
     }
 
     private ListView productList() {
@@ -297,14 +345,8 @@ public final class MainActivity extends Activity {
         box.setPadding(dp(18), dp(5), dp(18), 0);
         Spinner methods = new Spinner(this);
         methods.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
-                new String[]{"Efectivo", "Transferencia", "Débito", "Crédito"}));
+                new String[]{"Efectivo", "Transferencia", "Posnet"}));
         box.addView(methods);
-        EditText installments = new EditText(this);
-        installments.setHint("Cantidad de cuotas (solo crédito)");
-        installments.setInputType(InputType.TYPE_CLASS_NUMBER);
-        installments.setTextColor(WHITE);
-        installments.setHintTextColor(MUTED);
-        box.addView(installments);
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Cobrar " + money(cartTotal())).setView(box)
                 .setNegativeButton("Cancelar", null)
@@ -312,10 +354,6 @@ public final class MainActivity extends Activity {
         dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
                 .setOnClickListener(v -> {
                     String method = String.valueOf(methods.getSelectedItem());
-                    if ("Crédito".equals(method) && installments.getText().toString().trim().isEmpty()) {
-                        toast("Indicá las cuotas del crédito"); return;
-                    }
-                    if ("Crédito".equals(method)) method += " · " + installments.getText() + " cuotas";
                     saveSale(method);
                     dialog.dismiss();
                 }));
@@ -334,7 +372,8 @@ public final class MainActivity extends Activity {
                     .append(money(line.product.cashPrice))
                     .append(" = ").append(money(line.total()));
         }
-        saleStore.add(id, date, cartTotal(), payment, itemCount(), details.toString());
+        saleStore.add(id, date, cartTotal(), payment, itemCount(), details.toString(),
+                selectedSeller);
         cart.clear();
         toast("Venta guardada correctamente");
         showSale();
@@ -363,7 +402,8 @@ public final class MainActivity extends Activity {
                     LinearLayout card = panel();
                     LinearLayout copy = column();
                     copy.addView(label(sale.date, 14, WHITE, true));
-                    copy.addView(label(sale.items + " artículos · " + sale.payment,
+                    copy.addView(label(sale.items + " artículos · " + sale.payment
+                                    + " · " + sale.seller,
                             12, MUTED, false));
                     card.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
                     card.addView(label(money(sale.total), 17, LIME, true));
@@ -385,6 +425,7 @@ public final class MainActivity extends Activity {
         String message = "Venta #" + shortId
                 + "\nFecha: " + sale.date
                 + "\nMedio de pago: " + sale.payment
+                + "\nVendedor: " + sale.seller
                 + "\nArtículos: " + sale.items
                 + "\n\n" + products
                 + "\n\nTOTAL: " + money(sale.total);
@@ -446,7 +487,7 @@ public final class MainActivity extends Activity {
             LinearLayout card = panel();
             ImageView image = new ImageView(MainActivity.this);
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            imageLoader.load(image, product.imageUrl());
+            imageLoader.load(image, photoMap.urlFor(product));
             card.addView(image, new LinearLayout.LayoutParams(dp(58), dp(58)));
             LinearLayout copy = column();
             copy.setPadding(dp(10), 0, dp(5), 0);
