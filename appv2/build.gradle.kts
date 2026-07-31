@@ -21,5 +21,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    sourceSets["main"].res.srcDirs("src/main/res", "../app/src/main/res")
+    sourceSets["main"].res.srcDirs(
+        "src/main/res",
+        rootProject.file("app/src/main/res")
+    )
 }
