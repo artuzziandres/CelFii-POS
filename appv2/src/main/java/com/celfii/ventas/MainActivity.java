@@ -7,6 +7,8 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.content.pm.PackageManager;
+import android.print.PrintAttributes;
+import android.print.PrintManager;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
@@ -25,6 +27,8 @@ import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 
 import com.google.zxing.integration.android.IntentIntegrator;
 import com.google.zxing.integration.android.IntentResult;
@@ -59,6 +63,7 @@ public final class MainActivity extends Activity {
     private PhotoMap photoMap;
     private ProductAdapter activeAdapter;
     private EditText activeSearch;
+    private WebView printWebView;
     private boolean productsTab;
     private String selectedSeller = "Andres";
     private static final int CAMERA_REQUEST = 501;
@@ -323,9 +328,47 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.addView(box);
         new AlertDialog.Builder(this).setTitle("Ticket · " + money(cartTotal()))
-                .setView(scroll).setNegativeButton("Cerrar", null)
-                .setNeutralButton("Vaciar", (d, w) -> { cart.clear(); showSale(); })
+                .setView(scroll)
+                .setNegativeButton("Cerrar", null)
+                .setNeutralButton("Imprimir", (d, w) -> printCurrentSale())
                 .setPositiveButton("Cobrar", (d, w) -> showPayment()).show();
+    }
+
+    private void printCurrentSale() {
+        StringBuilder rows = new StringBuilder();
+        for (CartLine line : cart.values()) {
+            rows.append("<tr><td>").append(html(line.product.name)).append("</td><td>")
+                    .append(line.quantity).append("</td><td>")
+                    .append(html(money(line.product.cashPrice))).append("</td><td>")
+                    .append(html(money(line.total()))).append("</td></tr>");
+        }
+        String date = new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+                .format(new Date());
+        String html = "<html><head><meta charset='utf-8'><style>"
+                + "body{font-family:sans-serif;color:#111;padding:24px}h1{margin-bottom:2px}"
+                + "table{width:100%;border-collapse:collapse;margin-top:20px}"
+                + "th,td{padding:8px;border-bottom:1px solid #ccc;text-align:left}"
+                + "th:nth-child(n+2),td:nth-child(n+2){text-align:right}"
+                + ".total{text-align:right;font-size:24px;font-weight:bold;margin-top:22px}"
+                + "</style></head><body><h1>CEL-FII</h1><div>Venta · " + date + "</div>"
+                + "<table><tr><th>Producto</th><th>Cant.</th><th>Precio</th><th>Subtotal</th></tr>"
+                + rows + "</table><div class='total'>TOTAL: " + html(money(cartTotal()))
+                + "</div></body></html>";
+        printWebView = new WebView(this);
+        printWebView.setWebViewClient(new WebViewClient() {
+            @Override public void onPageFinished(WebView view, String url) {
+                PrintManager manager = (PrintManager) getSystemService(PRINT_SERVICE);
+                manager.print("Venta Cel-Fii", view.createPrintDocumentAdapter("Venta Cel-Fii"),
+                        new PrintAttributes.Builder().build());
+                printWebView = null;
+            }
+        });
+        printWebView.loadDataWithBaseURL(null, html, "text/HTML", "UTF-8", null);
+    }
+
+    private static String html(String value) {
+        return value.replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace("\\\"", "&quot;");
     }
 
     private void showPayment() {
