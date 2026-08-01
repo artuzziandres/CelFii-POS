@@ -3,11 +3,15 @@ package com.celfii.ventas;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Intent;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.net.Uri;
 import android.os.Bundle;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.provider.MediaStore;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
@@ -58,6 +62,7 @@ public final class MainActivity extends Activity {
     private final List<Product> catalog = new ArrayList<>();
     private final Map<String, CartLine> cart = new LinkedHashMap<>();
     private CatalogRepository catalogRepository;
+    private CelFiiApi api;
     private SaleStore saleStore;
     private ImageLoader imageLoader;
     private PhotoMap photoMap;
@@ -69,6 +74,9 @@ public final class MainActivity extends Activity {
     private String selectedSeller = "Andres";
     private static final int CAMERA_REQUEST = 501;
     private static final int BLUETOOTH_REQUEST = 502;
+    private static final int PRODUCT_PHOTO_REQUEST = 503;
+    private Bitmap pendingProductPhoto;
+    private ImageView pendingPhotoPreview;
     private static final String[] SELLERS = {
             "Andres", "Maxi", "Gaby", "Facu", "Malena", "Benjamin", "Alejandra", "Elio"
     };
@@ -76,6 +84,7 @@ public final class MainActivity extends Activity {
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         catalogRepository = new CatalogRepository(this);
+        api = new CelFiiApi();
         saleStore = new SaleStore(this);
         imageLoader = new ImageLoader();
         photoMap = new PhotoMap(this);
@@ -161,9 +170,14 @@ public final class MainActivity extends Activity {
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         titleRow.addView(label("Productos", 26, WHITE, true),
                 new LinearLayout.LayoutParams(0, -2, 1));
+        Button create = actionButton("NUEVO", true);
+        create.setOnClickListener(v -> showProductEditor(null));
+        titleRow.addView(create, new LinearLayout.LayoutParams(dp(88), dp(48)));
         Button update = actionButton("ACTUALIZAR", false);
         update.setOnClickListener(v -> synchronize(true));
-        titleRow.addView(update, new LinearLayout.LayoutParams(dp(128), dp(48)));
+        LinearLayout.LayoutParams updateParams = new LinearLayout.LayoutParams(dp(112), dp(48));
+        updateParams.leftMargin = dp(6);
+        titleRow.addView(update, updateParams);
         page.addView(titleRow);
         TextView hint = label(catalog.size() + " artículos de Cel-Fii Stock Real",
                 12, MUTED, false);
@@ -291,16 +305,25 @@ public final class MainActivity extends Activity {
         syncStatus.setText("● ACTUALIZANDO");
         syncStatus.setTextColor(LIME);
         if (announce) toast("Actualizando productos…");
+        if (api.configured()) {
+            api.products(new CelFiiApi.Callback<>() {
+                @Override public void success(List<Product> products) {
+                    runOnUiThread(() -> applyCatalog(products, false, announce));
+                }
+                @Override public void error(String message) {
+                    runOnUiThread(() -> {
+                        if (announce) toast("Conector: " + message + ". Usando copia local.");
+                        loadFallbackCatalog(announce);
+                    });
+                }
+            });
+        } else loadFallbackCatalog(announce);
+    }
+
+    private void loadFallbackCatalog(boolean announce) {
         catalogRepository.load(new CatalogRepository.Callback() {
             @Override public void success(List<Product> products, boolean fromCache) {
-                runOnUiThread(() -> {
-                    catalog.clear();
-                    catalog.addAll(products);
-                    syncStatus.setText("● " + products.size() + " PRODUCTOS");
-                    syncStatus.setTextColor(LIME);
-                    if (activeSearch != null) filterProducts(activeSearch.getText().toString());
-                    if (announce && !fromCache) toast("Catálogo actualizado");
-                });
+                runOnUiThread(() -> applyCatalog(products, fromCache, announce));
             }
             @Override public void error(String message) {
                 runOnUiThread(() -> {
@@ -310,6 +333,15 @@ public final class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    private void applyCatalog(List<Product> products, boolean fromCache, boolean announce) {
+        catalog.clear();
+        catalog.addAll(products);
+        syncStatus.setText("● " + products.size() + " PRODUCTOS");
+        syncStatus.setTextColor(LIME);
+        if (activeSearch != null) filterProducts(activeSearch.getText().toString());
+        if (announce && !fromCache) toast("Catálogo y stock actualizados");
     }
 
     private void addProduct(Product product) {
@@ -353,6 +385,11 @@ public final class MainActivity extends Activity {
         String date = new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
                 .format(new Date());
         printDirect(ticketBytes(date, selectedSeller, "", rows.toString(), cartTotal()));
+    }
+
+    private static String html(String value) {
+        return value.replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace("\"", "&quot;");
     }
 
     private void showPayment() {
@@ -399,8 +436,24 @@ public final class MainActivity extends Activity {
                     .append(money(line.product.cashPrice))
                     .append(" = ").append(money(line.total()));
         }
-        saleStore.add(id, date, cartTotal(), payment, itemCount(), details.toString(),
-                selectedSeller);
+        final String savedDetails = details.toString();
+        if (!api.configured()) {
+            toast("La conexión con Google Sheets no está configurada");
+            return;
+        }
+        toast("Guardando venta y descontando stock…");
+        api.createSale(id, selectedSeller, payment, cart.values(), new CelFiiApi.Callback<>() {
+            @Override public void success(String saleId) {
+                runOnUiThread(() -> completeSavedSale(id, date, payment, savedDetails));
+            }
+            @Override public void error(String message) {
+                runOnUiThread(() -> toast("No se guardó la venta: " + message));
+            }
+        });
+    }
+
+    private void completeSavedSale(String id, String date, String payment, String details) {
+        saleStore.add(id, date, cartTotal(), payment, itemCount(), details, selectedSeller);
         new AlertDialog.Builder(this)
                 .setTitle("Venta realizada")
                 .setMessage("La venta se guardó correctamente.")
@@ -411,6 +464,7 @@ public final class MainActivity extends Activity {
                     finishCompletedSale();
                 })
                 .show();
+        synchronize(false);
     }
 
     private void finishCompletedSale() {
@@ -546,7 +600,144 @@ public final class MainActivity extends Activity {
                 .setMessage(product.category + "\n\nEfectivo: " + money(product.cashPrice)
                         + "\nCrédito: " + money(product.creditPrice)
                         + "\nStock: " + product.stock + "\nCódigo: " + product.code)
-                .setPositiveButton("Cerrar", null).show();
+                .setNegativeButton("Cerrar", null)
+                .setPositiveButton("Editar", (dialog, which) -> showProductEditor(product)).show();
+    }
+
+    private void showProductEditor(Product current) {
+        if (!api.configured()) { toast("Falta configurar Google Sheets"); return; }
+        pendingProductPhoto = null;
+        LinearLayout form = column();
+        form.setPadding(dp(18), dp(4), dp(18), dp(8));
+        pendingPhotoPreview = new ImageView(this);
+        pendingPhotoPreview.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        if (current != null) imageLoader.load(pendingPhotoPreview, photoMap.urlFor(current));
+        else pendingPhotoPreview.setImageResource(R.drawable.logo_celfii_app);
+        form.addView(pendingPhotoPreview, new LinearLayout.LayoutParams(-1, dp(145)));
+        Button photo = actionButton("ELEGIR FOTO", false);
+        photo.setOnClickListener(v -> chooseProductPhoto());
+        form.addView(photo, new LinearLayout.LayoutParams(-1, dp(48)));
+        EditText name = editorInput("Nombre", current == null ? "" : current.name, false);
+        EditText category = editorInput("Categoría", current == null ? "" : current.category, false);
+        EditText cash = editorInput("Precio efectivo", current == null ? "" : plainNumber(current.cashPrice), true);
+        EditText card = editorInput("Precio Posnet", current == null ? "" : plainNumber(current.creditPrice), true);
+        EditText stock = editorInput("Stock inicial", current == null ? "0" : String.valueOf(current.stock), true);
+        stock.setEnabled(current == null);
+        EditText code = editorInput("Código de barras", current == null ? "" : current.code, false);
+        EditText backup = editorInput("Código alternativo", current == null ? "" : current.backupCode, false);
+        form.addView(name); form.addView(category); form.addView(cash); form.addView(card);
+        form.addView(stock); form.addView(code); form.addView(backup);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(form);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(current == null ? "Nuevo producto" : "Editar producto")
+                .setView(scroll).setNegativeButton("Cancelar", null)
+                .setPositiveButton("Guardar", null).create();
+        dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(v -> {
+                    if (name.getText().toString().trim().isEmpty()) {
+                        toast("Ingresá el nombre del producto"); return;
+                    }
+                    Product value = new Product(current == null ? "" : current.id,
+                            name.getText().toString().trim(), category.getText().toString().trim(),
+                            decimal(cash), decimal(card), current == null ? integer(stock) : current.stock,
+                            current == null ? "" : current.photo, code.getText().toString().trim(),
+                            backup.getText().toString().trim(), current == null ? "Accesorio" : current.type,
+                            current == null ? "" : current.description,
+                            current == null ? 0 : current.minimumStock);
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+                    saveProduct(value, integer(stock), current == null, dialog);
+                }));
+        dialog.show();
+    }
+
+    private void saveProduct(Product value, int initialStock, boolean creating, AlertDialog dialog) {
+        toast("Guardando producto…");
+        api.saveProduct(value, initialStock, creating, new CelFiiApi.Callback<>() {
+            @Override public void success(String productId) {
+                Bitmap photo = pendingProductPhoto;
+                if (photo == null) runOnUiThread(() -> productSaved(dialog));
+                else api.uploadPhoto(productId, photo, new CelFiiApi.Callback<>() {
+                    @Override public void success(String path) {
+                        runOnUiThread(() -> productSaved(dialog));
+                    }
+                    @Override public void error(String message) {
+                        runOnUiThread(() -> {
+                            toast("Producto guardado; la foto falló: " + message);
+                            productSaved(dialog);
+                        });
+                    }
+                });
+            }
+            @Override public void error(String message) {
+                runOnUiThread(() -> {
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);
+                    toast("No se guardó: " + message);
+                });
+            }
+        });
+    }
+
+    private void productSaved(AlertDialog dialog) {
+        pendingProductPhoto = null;
+        pendingPhotoPreview = null;
+        dialog.dismiss();
+        toast("Producto guardado en Google Sheets");
+        synchronize(true);
+    }
+
+    private void chooseProductPhoto() {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.setType("image/*");
+        startActivityForResult(Intent.createChooser(intent, "Elegir foto"), PRODUCT_PHOTO_REQUEST);
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != PRODUCT_PHOTO_REQUEST || resultCode != RESULT_OK || data == null) return;
+        Uri uri = data.getData();
+        if (uri == null) return;
+        try {
+            Bitmap original = MediaStore.Images.Media.getBitmap(getContentResolver(), uri);
+            int max = Math.max(original.getWidth(), original.getHeight());
+            if (max > 1200) {
+                float scale = 1200f / max;
+                pendingProductPhoto = Bitmap.createScaledBitmap(original,
+                        Math.round(original.getWidth() * scale),
+                        Math.round(original.getHeight() * scale), true);
+            } else pendingProductPhoto = original;
+            if (pendingPhotoPreview != null) pendingPhotoPreview.setImageBitmap(pendingProductPhoto);
+        } catch (Exception error) { toast("No se pudo abrir la foto"); }
+    }
+
+    private EditText editorInput(String hint, String value, boolean numeric) {
+        EditText input = new EditText(this);
+        input.setHint(hint);
+        input.setText(value);
+        input.setSingleLine(true);
+        input.setTextColor(WHITE);
+        input.setHintTextColor(MUTED);
+        input.setBackgroundColor(PANEL);
+        input.setPadding(dp(12), 0, dp(12), 0);
+        if (numeric) input.setInputType(InputType.TYPE_CLASS_NUMBER
+                | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(52));
+        params.topMargin = dp(7);
+        input.setLayoutParams(params);
+        return input;
+    }
+
+    private static double decimal(EditText input) {
+        try { return Double.parseDouble(input.getText().toString().replace(",", ".")); }
+        catch (Exception ignored) { return 0; }
+    }
+
+    private static int integer(EditText input) {
+        return Math.max(0, (int) Math.floor(decimal(input)));
+    }
+
+    private static String plainNumber(double value) {
+        return value == Math.floor(value) ? String.valueOf((long) value) : String.valueOf(value);
     }
 
     private double cartTotal() {
@@ -590,7 +781,7 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private static final class CartLine {
+    static final class CartLine {
         final Product product;
         int quantity = 1;
         CartLine(Product product) { this.product = product; }
