@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   push:
     branches: [agent/celfii-ventas-nueva]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
