@@ -27,18 +27,16 @@ jobs:
         run: |
           mkdir -p "$HOME/.android"
           cp signing/celfii-debug.keystore "$HOME/.android/debug.keystore"
-      - name: Compilar APK 0.6.0
+      - name: Compilar APK 0.6.1
         env:
-          CELFII_API_URL: ${{ secrets.CELFII_API_URL }}
           CELFII_API_TOKEN: ${{ secrets.CELFII_API_TOKEN }}
         run: |
-          test -n "$CELFII_API_URL"
           test -n "$CELFII_API_TOKEN"
           gradle :appv2:assembleDebug --stacktrace \
-            -PCELFII_API_URL="$CELFII_API_URL" \
+            -PCELFII_API_URL="https://script.google.com/macros/s/AKfycbwn9Btk_JoFU6KY-tPmQk2Ks7962bIYJuRLILJw-cj79lW-IZs2NDkku5xuK4xinjD_/exec" \
             -PCELFII_API_TOKEN="$CELFII_API_TOKEN"
       - uses: actions/upload-artifact@v4
         with:
-          name: Cel-Fii-Ventas-0.6.0
+          name: Cel-Fii-Ventas-0.6.1
           path: appv2/build/outputs/apk/debug/appv2-debug.apk
           if-no-files-found: error
