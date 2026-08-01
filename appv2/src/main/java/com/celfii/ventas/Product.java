@@ -4,12 +4,19 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
 final class Product {
-    final String id, name, category, photo, code, backupCode;
+    final String id, name, category, photo, code, backupCode, type, description;
     final double cashPrice, creditPrice;
-    final int stock;
+    final int stock, minimumStock;
 
     Product(String id, String name, String category, double cashPrice,
             double creditPrice, int stock, String photo, String code, String backupCode) {
+        this(id, name, category, cashPrice, creditPrice, stock, photo, code,
+                backupCode, "Accesorio", "", 0);
+    }
+
+    Product(String id, String name, String category, double cashPrice,
+            double creditPrice, int stock, String photo, String code, String backupCode,
+            String type, String description, int minimumStock) {
         this.id = id;
         this.name = name;
         this.category = category;
@@ -19,6 +26,9 @@ final class Product {
         this.photo = photo;
         this.code = code;
         this.backupCode = backupCode;
+        this.type = type;
+        this.description = description;
+        this.minimumStock = minimumStock;
     }
 
     String searchable() {
