@@ -27,7 +27,7 @@ jobs:
         run: |
           mkdir -p "$HOME/.android"
           cp signing/celfii-debug.keystore "$HOME/.android/debug.keystore"
-      - name: Compilar APK 0.6.2
+      - name: Compilar APK 0.6.3
         env:
           CELFII_API_TOKEN: ${{ secrets.CELFII_API_TOKEN }}
         run: |
@@ -36,6 +36,6 @@ jobs:
             -PCELFII_API_TOKEN="$CELFII_API_TOKEN"
       - uses: actions/upload-artifact@v4
         with:
-          name: Cel-Fii-Ventas-0.6.2
+          name: Cel-Fii-Ventas-0.6.3
           path: appv2/build/outputs/apk/debug/appv2-debug.apk
           if-no-files-found: error
