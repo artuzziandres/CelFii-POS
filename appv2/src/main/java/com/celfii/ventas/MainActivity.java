@@ -84,7 +84,7 @@ public final class MainActivity extends Activity {
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         catalogRepository = new CatalogRepository(this);
-        api = new CelFiiApi();
+        api = new CelFiiApi(this);
         saleStore = new SaleStore(this);
         imageLoader = new ImageLoader();
         photoMap = new PhotoMap(this);
@@ -589,6 +589,12 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(54));
         params.topMargin = dp(16);
         page.addView(update, params);
+        Button connection = actionButton(api.configured()
+                ? "CAMBIAR CONEXIÓN" : "CONFIGURAR CONEXIÓN", false);
+        connection.setOnClickListener(v -> showConnectionSetup());
+        LinearLayout.LayoutParams connectionParams = new LinearLayout.LayoutParams(-1, dp(54));
+        connectionParams.topMargin = dp(8);
+        page.addView(connection, connectionParams);
         TextView details = label("Planilla: Cel-Fii Stock Real\nPestaña: Articulos\n"
                 + "Productos cargados: " + catalog.size()
                 + "\n\nPróximos módulos: códigos de barras, pagos combinados, "
@@ -596,6 +602,43 @@ public final class MainActivity extends Activity {
         details.setPadding(0, dp(18), 0, 0);
         page.addView(details);
         content.addView(page);
+    }
+
+    private void showConnectionSetup() {
+        EditText token = editorInput("Token de conexión", "", false);
+        token.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Conectar Google Sheets")
+                .setMessage("Pegá el token de Apps Script. Se guardará solamente en este teléfono.")
+                .setView(token)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Verificar y guardar", null)
+                .create();
+        dialog.setOnShowListener(value -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(view -> {
+                    String candidate = token.getText().toString().trim();
+                    if (candidate.isEmpty()) { toast("Pegá el token de conexión"); return; }
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+                    toast("Verificando conexión…");
+                    api.configureToken(candidate, new CelFiiApi.Callback<>() {
+                        @Override public void success(Boolean ignored) {
+                            runOnUiThread(() -> {
+                                dialog.dismiss();
+                                toast("Google Sheets conectado correctamente");
+                                synchronize(true);
+                                showMore();
+                            });
+                        }
+                        @Override public void error(String message) {
+                            runOnUiThread(() -> {
+                                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);
+                                toast("No se pudo conectar: " + message);
+                            });
+                        }
+                    });
+                }));
+        dialog.show();
     }
 
     private void showProduct(Product product) {
