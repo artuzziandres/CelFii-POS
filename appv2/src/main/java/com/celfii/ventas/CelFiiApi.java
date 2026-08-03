@@ -1,5 +1,7 @@
 package com.celfii.ventas;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.util.Base64;
 
@@ -19,20 +21,39 @@ import java.util.ArrayList;
 import java.util.List;
 
 final class CelFiiApi {
+    private static final String SETTINGS = "celfii_connection";
+    private static final String TOKEN = "api_token";
+    private final SharedPreferences preferences;
+
     interface Callback<T> {
         void success(T value);
         void error(String message);
     }
 
+    CelFiiApi(Context context) {
+        preferences = context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE);
+    }
+
     boolean configured() {
-        return !BuildConfig.CELFII_API_URL.isBlank() && !BuildConfig.CELFII_API_TOKEN.isBlank();
+        return !BuildConfig.CELFII_API_URL.isBlank() && !token().isBlank();
+    }
+
+    void configureToken(String candidate, Callback<Boolean> callback) {
+        new Thread(() -> {
+            try {
+                request("GET", BuildConfig.CELFII_API_URL
+                        + "?action=health&token=" + encoded(candidate), null);
+                preferences.edit().putString(TOKEN, candidate).apply();
+                callback.success(true);
+            } catch (Exception error) { callback.error(message(error)); }
+        }, "celfii-token").start();
     }
 
     void products(Callback<List<Product>> callback) {
         new Thread(() -> {
             try {
                 JSONObject response = request("GET", BuildConfig.CELFII_API_URL
-                        + "?action=products&token=" + encoded(BuildConfig.CELFII_API_TOKEN), null);
+                        + "?action=products&token=" + encoded(token()), null);
                 JSONArray rows = response.getJSONArray("products");
                 List<Product> result = new ArrayList<>();
                 for (int i = 0; i < rows.length(); i++) {
@@ -105,7 +126,11 @@ final class CelFiiApi {
     }
 
     private JSONObject base(String action) throws Exception {
-        return new JSONObject().put("action", action).put("token", BuildConfig.CELFII_API_TOKEN);
+        return new JSONObject().put("action", action).put("token", token());
+    }
+
+    private String token() {
+        return preferences.getString(TOKEN, "").trim();
     }
 
     private static JSONObject request(String method, String target, JSONObject body) throws Exception {
