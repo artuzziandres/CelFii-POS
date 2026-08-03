@@ -1,7 +1,5 @@
 plugins { id("com.android.application") }
 
-val apiToken = providers.gradleProperty("CELFII_API_TOKEN").orElse("")
-
 android {
     namespace = "com.celfii.ventas"
     compileSdk = 36
@@ -12,8 +10,8 @@ android {
         targetSdk = 36
         versionCode = 19
         versionName = "0.6.4"
-        buildConfigField("String", "CELFII_API_URL", "\"https://script.google.com/macros/s/AKfycbwn9Btk_JoFU6KY-tPmQk2Ks7962bIYJuRLILJw-cj79lW-IZs2NDkku5xuK4xinjD_/exec\"")
-        buildConfigField("String", "CELFII_API_TOKEN", "\"${apiToken.get()}\"")
+        buildConfigField("String", "CELFII_API_URL",
+            "\"https://script.google.com/macros/s/AKfycbwn9Btk_JoFU6KY-tPmQk2Ks7962bIYJuRLILJw-cj79lW-IZs2NDkku5xuK4xinjD_/exec\"")
     }
 
     buildFeatures { buildConfig = true }
