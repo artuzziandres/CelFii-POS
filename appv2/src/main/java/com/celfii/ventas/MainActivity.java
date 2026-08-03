@@ -411,20 +411,28 @@ public final class MainActivity extends Activity {
         }
         box.addView(sellerSpinner);
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Cobrar " + money(cartTotal())).setView(box)
+                .setTitle("Finalizar venta · " + money(cartTotal())).setView(box)
                 .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Guardar venta", null).create();
-        dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-                .setOnClickListener(v -> {
+                .setNeutralButton("Solo guardar", null)
+                .setPositiveButton("Guardar e imprimir", null).create();
+        dialog.setOnShowListener(x -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String method = String.valueOf(methods.getSelectedItem());
+                selectedSeller = String.valueOf(sellerSpinner.getSelectedItem());
+                saveSale(method, true);
+                dialog.dismiss();
+            });
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
                     String method = String.valueOf(methods.getSelectedItem());
                     selectedSeller = String.valueOf(sellerSpinner.getSelectedItem());
-                    saveSale(method);
+                    saveSale(method, false);
                     dialog.dismiss();
-                }));
+                });
+        });
         dialog.show();
     }
 
-    private void saveSale(String payment) {
+    private void saveSale(String payment, boolean printAfterSave) {
         String id = UUID.randomUUID().toString();
         String date = new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(new Date());
         StringBuilder details = new StringBuilder();
@@ -444,7 +452,8 @@ public final class MainActivity extends Activity {
         toast("Guardando venta y descontando stock…");
         api.createSale(id, selectedSeller, payment, cart.values(), new CelFiiApi.Callback<>() {
             @Override public void success(String saleId) {
-                runOnUiThread(() -> completeSavedSale(id, date, payment, savedDetails));
+                runOnUiThread(() -> completeSavedSale(
+                        id, date, payment, savedDetails, printAfterSave));
             }
             @Override public void error(String message) {
                 runOnUiThread(() -> toast("No se guardó la venta: " + message));
@@ -452,18 +461,12 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private void completeSavedSale(String id, String date, String payment, String details) {
+    private void completeSavedSale(String id, String date, String payment, String details,
+                                   boolean printAfterSave) {
         saleStore.add(id, date, cartTotal(), payment, itemCount(), details, selectedSeller);
-        new AlertDialog.Builder(this)
-                .setTitle("Venta realizada")
-                .setMessage("La venta se guardó correctamente.")
-                .setCancelable(false)
-                .setNegativeButton("Cerrar", (d, w) -> finishCompletedSale())
-                .setPositiveButton("Imprimir", (d, w) -> {
-                    printCurrentSale();
-                    finishCompletedSale();
-                })
-                .show();
+        if (printAfterSave) printCurrentSale();
+        toast(printAfterSave ? "Venta guardada. Enviando ticket…" : "Venta guardada");
+        finishCompletedSale();
         synchronize(false);
     }
 
