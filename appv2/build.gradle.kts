@@ -10,8 +10,8 @@ android {
         applicationId = "com.celfii.ventas"
         minSdk = 26
         targetSdk = 36
-        versionCode = 18
-        versionName = "0.6.3"
+        versionCode = 19
+        versionName = "0.6.4"
         buildConfigField("String", "CELFII_API_URL", "\"https://script.google.com/macros/s/AKfycbwn9Btk_JoFU6KY-tPmQk2Ks7962bIYJuRLILJw-cj79lW-IZs2NDkku5xuK4xinjD_/exec\"")
         buildConfigField("String", "CELFII_API_TOKEN", "\"${apiToken.get()}\"")
     }
