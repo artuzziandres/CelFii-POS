@@ -8,10 +8,10 @@ android {
         applicationId = "com.celfii.ventas"
         minSdk = 26
         targetSdk = 36
-        versionCode = 19
-        versionName = "0.6.4"
+        versionCode = 20
+        versionName = "0.6.5"
         buildConfigField("String", "CELFII_API_URL",
-            "\"https://script.google.com/macros/s/AKfycbwn9Btk_JoFU6KY-tPmQk2Ks7962bIYJuRLILJw-cj79lW-IZs2NDkku5xuK4xinjD_/exec\"")
+            "\"https://script.google.com/macros/s/AKfycbzCHzQ2OflxGg4iPSZ6yO7VxTAdxLz8iy9FMUsDvy2JhS84N4DhiKFJRCZIKtbK_ilV/exec\"")
     }
 
     buildFeatures { buildConfig = true }
