@@ -18,6 +18,7 @@ import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.widget.ArrayAdapter;
 import android.widget.BaseAdapter;
 import android.widget.Button;
@@ -68,6 +69,7 @@ public final class MainActivity extends Activity {
     private PhotoMap photoMap;
     private ProductAdapter activeAdapter;
     private EditText activeSearch;
+    private EditText scanDestination;
     private PrinterManager printer;
     private byte[] pendingTicket;
     private boolean productsTab;
@@ -97,6 +99,20 @@ public final class MainActivity extends Activity {
     private void renderApplication() {
         LinearLayout root = column();
         root.setBackgroundColor(BLACK);
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            int top;
+            int bottom;
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+                top = bars.top;
+                bottom = bars.bottom;
+            } else {
+                top = insets.getSystemWindowInsetTop();
+                bottom = insets.getSystemWindowInsetBottom();
+            }
+            view.setPadding(0, top, 0, bottom);
+            return insets;
+        });
         LinearLayout header = row();
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(14), dp(8), dp(14), dp(8));
@@ -212,7 +228,7 @@ public final class MainActivity extends Activity {
         scanner.setContentDescription("Escanear código de barras");
         scanner.setBackgroundColor(LIME);
         scanner.setPadding(dp(14), dp(14), dp(14), dp(14));
-        scanner.setOnClickListener(v -> scanBarcode());
+        scanner.setOnClickListener(v -> scanBarcode(activeSearch));
         LinearLayout.LayoutParams scanParams = new LinearLayout.LayoutParams(dp(56), dp(52));
         scanParams.leftMargin = dp(7);
         searchRow.addView(scanner, scanParams);
@@ -222,7 +238,8 @@ public final class MainActivity extends Activity {
         return searchRow;
     }
 
-    private void scanBarcode() {
+    private void scanBarcode(EditText destination) {
+        scanDestination = destination;
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_REQUEST);
             return;
@@ -244,7 +261,8 @@ public final class MainActivity extends Activity {
             camera.decodeContinuous(new BarcodeCallback() {
                 @Override public void barcodeResult(BarcodeResult result) {
                     camera.pause();
-                    if (activeSearch != null) activeSearch.setText(result.getText());
+                    if (scanDestination != null) scanDestination.setText(result.getText());
+                    scanDestination = null;
                     dialog.dismiss();
                 }
             });
@@ -671,8 +689,24 @@ public final class MainActivity extends Activity {
         stock.setEnabled(current == null);
         EditText code = editorInput("Código de barras", current == null ? "" : current.code, false);
         EditText backup = editorInput("Código alternativo", current == null ? "" : current.backupCode, false);
+        LinearLayout codeRow = row();
+        code.setLayoutParams(new LinearLayout.LayoutParams(0, dp(52), 1));
+        codeRow.addView(code);
+        ImageButton codeScanner = new ImageButton(this);
+        codeScanner.setImageResource(R.drawable.ic_scan);
+        codeScanner.setContentDescription("Escanear código del producto");
+        codeScanner.setBackgroundColor(LIME);
+        codeScanner.setPadding(dp(14), dp(14), dp(14), dp(14));
+        codeScanner.setOnClickListener(v -> scanBarcode(code));
+        LinearLayout.LayoutParams codeScannerParams =
+                new LinearLayout.LayoutParams(dp(56), dp(52));
+        codeScannerParams.leftMargin = dp(7);
+        codeRow.addView(codeScanner, codeScannerParams);
+        LinearLayout.LayoutParams codeRowParams = new LinearLayout.LayoutParams(-1, dp(52));
+        codeRowParams.topMargin = dp(7);
+        codeRow.setLayoutParams(codeRowParams);
         form.addView(name); form.addView(category); form.addView(cash); form.addView(card);
-        form.addView(stock); form.addView(code); form.addView(backup);
+        form.addView(stock); form.addView(codeRow); form.addView(backup);
         ScrollView scroll = new ScrollView(this);
         scroll.addView(form);
         AlertDialog dialog = new AlertDialog.Builder(this)
