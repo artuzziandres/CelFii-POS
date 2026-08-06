@@ -7,7 +7,10 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 final class SaleStore {
     private final SharedPreferences preferences;
@@ -34,23 +37,41 @@ final class SaleStore {
             JSONArray rows = new JSONArray(preferences.getString("sales", "[]"));
             for (int i = 0; i < rows.length(); i++) {
                 JSONObject row = rows.getJSONObject(i);
-                result.add(new Entry(row.optString("id"), row.optString("date"),
+                String date = row.optString("date");
+                result.add(new Entry(row.optString("id"), date,
                         row.optDouble("total"), row.optString("payment"), row.optInt("items"),
-                        row.optString("details"), row.optString("seller", "Sin asignar")));
+                        row.optString("details"), row.optString("seller", "Sin asignar"),
+                        monthFromDate(date), timestampFromDate(date)));
             }
         } catch (Exception ignored) {}
         return result;
     }
 
     static final class Entry {
-        final String id, date, payment, details, seller;
+        final String id, date, payment, details, seller, month;
         final double total;
         final int items;
+        final long timestamp;
         Entry(String id, String date, double total, String payment, int items,
-              String details, String seller) {
+              String details, String seller, String month, long timestamp) {
             this.id = id; this.date = date; this.total = total;
             this.payment = payment; this.items = items; this.details = details;
-            this.seller = seller;
+            this.seller = seller; this.month = month; this.timestamp = timestamp;
         }
+    }
+
+    private static long timestampFromDate(String value) {
+        try {
+            Date date = new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).parse(value);
+            return date == null ? 0 : date.getTime();
+        } catch (Exception ignored) { return 0; }
+    }
+
+    private static String monthFromDate(String value) {
+        try {
+            Date date = new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).parse(value);
+            return date == null ? "Sin fecha"
+                    : new SimpleDateFormat("yyyy-MM", Locale.US).format(date);
+        } catch (Exception ignored) { return "Sin fecha"; }
     }
 }
