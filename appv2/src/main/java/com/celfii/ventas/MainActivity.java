@@ -73,6 +73,8 @@ public final class MainActivity extends Activity {
     private PrinterManager printer;
     private byte[] pendingTicket;
     private boolean productsTab;
+    private boolean historyTab;
+    private boolean saleSaving;
     private String selectedSeller = "Andres";
     private static final int CAMERA_REQUEST = 501;
     private static final int BLUETOOTH_REQUEST = 502;
@@ -145,6 +147,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showSale() {
+        historyTab = false;
         productsTab = false;
         content.removeAllViews();
         LinearLayout page = column();
@@ -178,6 +181,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showProducts() {
+        historyTab = false;
         productsTab = true;
         content.removeAllViews();
         LinearLayout page = column();
@@ -411,6 +415,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showPayment() {
+        if (saleSaving) { toast("La venta anterior todavía se está guardando"); return; }
         if (cart.isEmpty()) { toast("Agregá productos"); return; }
         LinearLayout box = column();
         box.setPadding(dp(18), dp(5), dp(18), 0);
@@ -467,14 +472,21 @@ public final class MainActivity extends Activity {
             toast("La conexión con Google Sheets no está configurada");
             return;
         }
+        if (saleSaving) return;
+        saleSaving = true;
         toast("Guardando venta y descontando stock…");
         api.createSale(id, selectedSeller, payment, cart.values(), new CelFiiApi.Callback<>() {
             @Override public void success(String saleId) {
-                runOnUiThread(() -> completeSavedSale(
-                        id, date, payment, savedDetails, printAfterSave));
+                runOnUiThread(() -> {
+                    saleSaving = false;
+                    completeSavedSale(saleId, date, payment, savedDetails, printAfterSave);
+                });
             }
             @Override public void error(String message) {
-                runOnUiThread(() -> toast("No se guardó la venta: " + message));
+                runOnUiThread(() -> {
+                    saleSaving = false;
+                    toast("No se guardó la venta: " + message);
+                });
             }
         });
     }
@@ -494,41 +506,105 @@ public final class MainActivity extends Activity {
     }
 
     private void showHistory() {
+        historyTab = true;
         productsTab = false;
         content.removeAllViews();
         LinearLayout page = column();
         page.setPadding(dp(14), dp(7), dp(14), dp(10));
-        page.addView(label("Historial", 26, WHITE, true));
-        List<SaleStore.Entry> sales = saleStore.all();
+        LinearLayout title = row();
+        title.setGravity(Gravity.CENTER_VERTICAL);
+        title.addView(label("Historial", 26, WHITE, true),
+                new LinearLayout.LayoutParams(0, -2, 1));
+        Button refresh = actionButton("ACTUALIZAR", false);
+        refresh.setOnClickListener(v -> showHistory());
+        title.addView(refresh, new LinearLayout.LayoutParams(dp(112), dp(46)));
+        page.addView(title);
+        TextView loading = label("Actualizando ventas de Google Sheets…", 14, MUTED, false);
+        loading.setPadding(0, dp(14), 0, 0);
+        page.addView(loading);
+        content.addView(page);
+        if (!api.configured()) renderHistory(saleStore.all(), "Historial local");
+        else api.sales(new CelFiiApi.Callback<>() {
+            @Override public void success(List<SaleStore.Entry> sales) {
+                runOnUiThread(() -> { if (historyTab) renderHistory(sales, "Sincronizado"); });
+            }
+            @Override public void error(String message) {
+                runOnUiThread(() -> {
+                    if (!historyTab) return;
+                    toast("Historial: " + message + ". Mostrando copia local.");
+                    renderHistory(saleStore.all(), "Historial local");
+                });
+            }
+        });
+    }
+
+    private void renderHistory(List<SaleStore.Entry> sales, String source) {
+        content.removeAllViews();
+        LinearLayout page = column();
+        page.setPadding(dp(14), dp(7), dp(14), dp(10));
+        LinearLayout title = row();
+        title.setGravity(Gravity.CENTER_VERTICAL);
+        title.addView(label("Historial", 26, WHITE, true),
+                new LinearLayout.LayoutParams(0, -2, 1));
+        Button refresh = actionButton("ACTUALIZAR", false);
+        refresh.setOnClickListener(v -> showHistory());
+        title.addView(refresh, new LinearLayout.LayoutParams(dp(112), dp(46)));
+        page.addView(title);
+        page.addView(label(source + " · " + sales.size() + " ventas", 12, MUTED, false));
         if (sales.isEmpty()) {
             TextView empty = label("Todavía no hay ventas guardadas.", 14, MUTED, false);
             empty.setPadding(0, dp(14), 0, 0);
             page.addView(empty);
         } else {
-            ListView list = new ListView(this);
-            list.setDivider(null);
-            list.setAdapter(new BaseAdapter() {
-                @Override public int getCount() { return sales.size(); }
-                @Override public Object getItem(int position) { return sales.get(position); }
-                @Override public long getItemId(int position) { return position; }
-                @Override public View getView(int position, View recycled, ViewGroup parent) {
-                    SaleStore.Entry sale = sales.get(position);
+            Map<String, List<SaleStore.Entry>> months = new LinkedHashMap<>();
+            for (SaleStore.Entry sale : sales) {
+                String month = sale.month == null || sale.month.isEmpty()
+                        ? "Sin fecha" : sale.month;
+                months.computeIfAbsent(month, ignored -> new ArrayList<>()).add(sale);
+            }
+            ScrollView scroll = new ScrollView(this);
+            LinearLayout folders = column();
+            boolean first = true;
+            for (Map.Entry<String, List<SaleStore.Entry>> month : months.entrySet()) {
+                LinearLayout monthSales = column();
+                monthSales.setVisibility(first ? View.VISIBLE : View.GONE);
+                double monthTotal = 0;
+                for (SaleStore.Entry sale : month.getValue()) monthTotal += sale.total;
+                Button folder = actionButton(monthName(month.getKey()) + " · "
+                        + month.getValue().size() + " VENTAS · " + money(monthTotal), first);
+                folder.setOnClickListener(v -> monthSales.setVisibility(
+                        monthSales.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE));
+                LinearLayout.LayoutParams folderParams = new LinearLayout.LayoutParams(-1, dp(52));
+                folderParams.topMargin = dp(9);
+                folders.addView(folder, folderParams);
+                for (SaleStore.Entry sale : month.getValue()) {
                     LinearLayout card = panel();
+                    card.setOnClickListener(v -> showSaleDetails(sale));
                     LinearLayout copy = column();
                     copy.addView(label(sale.date, 14, WHITE, true));
                     copy.addView(label(sale.items + " artículos · " + sale.payment
-                                    + " · " + sale.seller,
-                            12, MUTED, false));
+                                    + " · " + sale.seller, 12, MUTED, false));
                     card.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
                     card.addView(label(money(sale.total), 17, LIME, true));
-                    return card;
+                    LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
+                    cardParams.topMargin = dp(6);
+                    monthSales.addView(card, cardParams);
                 }
-            });
-            list.setOnItemClickListener((parent, view, position, id) ->
-                    showSaleDetails(sales.get(position)));
-            page.addView(list, new LinearLayout.LayoutParams(-1, 0, 1));
+                folders.addView(monthSales);
+                first = false;
+            }
+            scroll.addView(folders);
+            page.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         }
         content.addView(page);
+    }
+
+    private String monthName(String value) {
+        if (value == null || !value.matches("\\d{4}-\\d{2}")) return "SIN FECHA";
+        String[] names = {"ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO",
+                "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"};
+        int month = Integer.parseInt(value.substring(5, 7));
+        return names[Math.max(1, Math.min(12, month)) - 1] + " " + value.substring(0, 4);
     }
 
     private void showSaleDetails(SaleStore.Entry sale) {
@@ -597,6 +673,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showMore() {
+        historyTab = false;
         productsTab = false;
         content.removeAllViews();
         LinearLayout page = column();
