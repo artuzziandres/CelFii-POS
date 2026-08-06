@@ -17,8 +17,10 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 final class CelFiiApi {
     private static final String SETTINGS = "celfii_connection";
@@ -93,6 +95,40 @@ final class CelFiiApi {
         }, "celfii-sale").start();
     }
 
+    void sales(Callback<List<SaleStore.Entry>> callback) {
+        new Thread(() -> {
+            try {
+                JSONObject response = request("GET", BuildConfig.CELFII_API_URL
+                        + "?action=sales&token=" + encoded(token()), null);
+                JSONArray rows = response.getJSONArray("sales");
+                List<SaleStore.Entry> result = new ArrayList<>();
+                for (int i = 0; i < rows.length(); i++) {
+                    JSONObject row = rows.getJSONObject(i);
+                    JSONArray lines = row.optJSONArray("details");
+                    StringBuilder details = new StringBuilder();
+                    int items = 0;
+                    if (lines != null) for (int lineIndex = 0;
+                                             lineIndex < lines.length(); lineIndex++) {
+                        JSONObject line = lines.getJSONObject(lineIndex);
+                        int quantity = line.optInt("quantity");
+                        items += quantity;
+                        if (details.length() > 0) details.append("\n\n");
+                        details.append(line.optString("name"))
+                                .append("\n").append(quantity).append(" × ")
+                                .append(amount(line.optDouble("unitPrice")))
+                                .append(" = ").append(amount(line.optDouble("total")));
+                    }
+                    result.add(new SaleStore.Entry(row.optString("id"),
+                            row.optString("date"), row.optDouble("total"),
+                            row.optString("payment"), items, details.toString(),
+                            row.optString("seller", "Sin asignar"),
+                            row.optString("month", "Sin fecha"), row.optLong("timestamp")));
+                }
+                callback.success(result);
+            } catch (Exception error) { callback.error(message(error)); }
+        }, "celfii-sales").start();
+    }
+
     void saveProduct(Product product, int initialStock, boolean creating,
                      Callback<String> callback) {
         new Thread(() -> {
@@ -165,6 +201,11 @@ final class CelFiiApi {
 
     private static String encoded(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private static String amount(double value) {
+        return NumberFormat.getCurrencyInstance(Locale.forLanguageTag("es-AR"))
+                .format(value).replace(",00", "");
     }
 
     private static String message(Exception error) {
