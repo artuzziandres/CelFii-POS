@@ -1,5 +1,7 @@
 plugins { id("com.android.application") }
 
+// Versión con historial mensual sincronizado entre todos los dispositivos.
+
 android {
     namespace = "com.celfii.ventas"
     compileSdk = 36
