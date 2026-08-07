@@ -1,0 +1,28 @@
+name: Compilar Cel-Fii Ventas Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [agent/celfii-ventas-nueva]
+    paths:
+      - 'windows/**'
+      - '.github/workflows/build-windows.yml'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publicar EXE x64
+        run: dotnet publish windows/CelFiiVentas.Windows/CelFiiVentas.Windows.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -o publish
+      - name: Crear paquete
+        shell: pwsh
+        run: Compress-Archive -Path publish/* -DestinationPath Cel-Fii-Ventas-Windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cel-Fii-Ventas-Windows-x64
+          path: Cel-Fii-Ventas-Windows-x64.zip
+          retention-days: 30
