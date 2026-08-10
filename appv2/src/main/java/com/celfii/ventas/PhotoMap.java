@@ -26,6 +26,9 @@ final class PhotoMap {
     }
 
     String urlFor(Product product) {
+        if (product.photoUrl != null && !product.photoUrl.trim().isEmpty()) {
+            return product.photoUrl.trim();
+        }
         if (product.photo == null || product.photo.trim().isEmpty()) return "";
         String name = product.photo;
         int slash = name.lastIndexOf('/');
