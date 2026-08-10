@@ -37,7 +37,7 @@ final class PhotoMap {
         if (fileId.isEmpty() && product.id != null && name.startsWith(product.id)) {
             fileId = files.optString(name.substring(product.id.length()), "");
         }
-        if (fileId.isEmpty()) return product.imageUrl();
+        if (fileId.isEmpty()) return "celfii-photo://" + product.id;
         return "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w300";
     }
 }
