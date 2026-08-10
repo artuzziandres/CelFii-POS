@@ -48,4 +48,23 @@ final class ImageLoader {
             }
         });
     }
+
+    void load(ImageView view, String url, CelFiiApi api) {
+        if (url == null || !url.startsWith("celfii-photo://")) {
+            load(view, url);
+            return;
+        }
+        view.setImageResource(R.drawable.logo_celfii);
+        view.setTag(url);
+        Bitmap saved = cache.get(url);
+        if (saved != null) { view.setImageBitmap(saved); return; }
+        String productId = url.substring("celfii-photo://".length());
+        api.productPhoto(productId, new CelFiiApi.Callback<>() {
+            @Override public void success(Bitmap bitmap) {
+                cache.put(url, bitmap);
+                view.post(() -> { if (url.equals(view.getTag())) view.setImageBitmap(bitmap); });
+            }
+            @Override public void error(String message) { }
+        });
+    }
 }
