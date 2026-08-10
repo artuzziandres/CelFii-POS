@@ -3,6 +3,7 @@ package com.celfii.ventas;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.util.Base64;
 
 import org.json.JSONArray;
@@ -159,6 +160,20 @@ final class CelFiiApi {
                 callback.success(response.getString("path"));
             } catch (Exception error) { callback.error(message(error)); }
         }, "celfii-photo").start();
+    }
+
+    void productPhoto(String productId, Callback<Bitmap> callback) {
+        new Thread(() -> {
+            try {
+                JSONObject response = request("GET", BuildConfig.CELFII_API_URL
+                        + "?action=productPhoto&productId=" + encoded(productId)
+                        + "&token=" + encoded(token()), null);
+                byte[] bytes = Base64.decode(response.getString("base64"), Base64.DEFAULT);
+                Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                if (bitmap == null) throw new IllegalStateException("La foto no es válida");
+                callback.success(bitmap);
+            } catch (Exception error) { callback.error(message(error)); }
+        }, "celfii-product-photo").start();
     }
 
     private JSONObject base(String action) throws Exception {
