@@ -752,7 +752,7 @@ public final class MainActivity extends Activity {
         form.setPadding(dp(18), dp(4), dp(18), dp(8));
         pendingPhotoPreview = new ImageView(this);
         pendingPhotoPreview.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        if (current != null) imageLoader.load(pendingPhotoPreview, photoMap.urlFor(current));
+        if (current != null) imageLoader.load(pendingPhotoPreview, photoMap.urlFor(current), api);
         else pendingPhotoPreview.setImageResource(R.drawable.logo_celfii_app);
         form.addView(pendingPhotoPreview, new LinearLayout.LayoutParams(-1, dp(145)));
         Button photo = actionButton("ELEGIR FOTO", false);
@@ -920,7 +920,7 @@ public final class MainActivity extends Activity {
             LinearLayout card = panel();
             ImageView image = new ImageView(MainActivity.this);
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            imageLoader.load(image, photoMap.urlFor(product));
+            imageLoader.load(image, photoMap.urlFor(product), api);
             card.addView(image, new LinearLayout.LayoutParams(dp(58), dp(58)));
             LinearLayout copy = column();
             copy.setPadding(dp(10), 0, dp(5), 0);
