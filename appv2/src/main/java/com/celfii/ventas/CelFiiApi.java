@@ -63,7 +63,7 @@ final class CelFiiApi {
                     result.add(new Product(row.optString("id"), row.optString("name"),
                             row.optString("category"), row.optDouble("cashPrice"),
                             row.optDouble("cardPrice"), row.optInt("stock"),
-                            row.optString("photo"), row.optString("code"),
+                            row.optString("photo"), row.optString("photoUrl"), row.optString("code"),
                             row.optString("backupCode"), row.optString("type", "Accesorio"),
                             row.optString("description"), row.optInt("minimumStock")));
                 }
