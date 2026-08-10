@@ -19,6 +19,8 @@ function doGet(e) {
     validateToken_(e.parameter.token);
     const action = String(e.parameter.action || '');
     if (action === 'products') return json_(getProducts_(e.parameter.q || ''));
+    if (action === 'productPhoto') return json_(getProductPhoto_(e.parameter.productId || ''));
+    if (action === 'sales') return json_(getSales_(e.parameter.month || ''));
     if (action === 'health') return json_({ ok: true, service: 'Cel-Fii POS' });
     throw new Error('Acción no válida');
   } catch (error) {
@@ -31,6 +33,8 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents || '{}');
     validateToken_(body.token);
     if (body.action === 'createSale') return json_(createSale_(body));
+    if (body.action === 'createProduct') return json_(createProduct_(body));
+    if (body.action === 'updateProduct') return json_(updateProduct_(body));
     if (body.action === 'uploadProductPhoto') return json_(uploadProductPhoto_(body));
     throw new Error('Acción no válida');
   } catch (error) {
@@ -54,7 +58,7 @@ function getProducts_(query) {
   const needle = normalize_(query);
   const products = [];
 
-  for (let row = 1; row < values.length && products.length < 250; row++) {
+  for (let row = 1; row < values.length; row++) {
     const source = values[row];
     const name = cell_(source, headers, 'Nombre');
     const id = cell_(source, headers, 'idArticulos');
@@ -72,11 +76,86 @@ function getProducts_(query) {
       category: cell_(source, headers, 'Categoría'),
       cashPrice: number_(cell_(source, headers, 'Precio Efectivo')),
       cardPrice: number_(cell_(source, headers, 'Precio en 3 Cuotas')),
-      stock: Math.floor(number_(cell_(source, headers, 'Stock Actual'))),
-      photo: cell_(source, headers, 'Foto')
+      stock: Math.floor(number_(cell_(source, headers,
+        headers['Stock Actual 2'] !== undefined ? 'Stock Actual 2' : 'Stock Actual'))),
+      photo: cell_(source, headers, 'Foto'),
+      code: cell_(source, headers, 'Codigo'),
+      backupCode: cell_(source, headers, 'Codigo_Backup'),
+      type: cell_(source, headers, 'Tipo'),
+      description: cell_(source, headers, 'Descripcion '),
+      minimumStock: Math.floor(number_(cell_(source, headers, 'Stock Minimo'))),
+      costUsd: number_(cell_(source, headers, 'Costo en Dolares'))
     });
   }
   return { ok: true, products: products };
+}
+
+function getSales_(requestedMonth) {
+  ensureColumns_();
+  const salesSheet = sheet_(CONFIG.sheets.sales);
+  const detailsSheet = sheet_(CONFIG.sheets.details);
+  const productsSheet = sheet_(CONFIG.sheets.products);
+  const salesData = salesSheet.getDataRange().getValues();
+  const detailData = detailsSheet.getDataRange().getValues();
+  const productData = productsSheet.getDataRange().getValues();
+  if (salesData.length < 2) return { ok: true, sales: [] };
+
+  const salesHeaders = headerMap_(salesData[0]);
+  const detailHeaders = detailData.length ? headerMap_(detailData[0]) : {};
+  const productHeaders = productData.length ? headerMap_(productData[0]) : {};
+  const productNames = {};
+  const detailsBySale = {};
+
+  for (let row = 1; row < productData.length; row++) {
+    const id = cell_(productData[row], productHeaders, 'idArticulos');
+    if (id) productNames[id] = cell_(productData[row], productHeaders, 'Nombre');
+  }
+
+  for (let row = 1; row < detailData.length; row++) {
+    const source = detailData[row];
+    const saleId = cell_(source, detailHeaders, 'idVenta');
+    if (!saleId) continue;
+    const productId = cell_(source, detailHeaders, 'idArticulos');
+    if (!detailsBySale[saleId]) detailsBySale[saleId] = [];
+    detailsBySale[saleId].push({
+      productId: productId,
+      name: productNames[productId] || productId,
+      quantity: Math.floor(number_(cell_(source, detailHeaders, 'Cantidad'))),
+      unitPrice: number_(cell_(source, detailHeaders, 'Precio Unitario')),
+      total: number_(cell_(source, detailHeaders, 'Total'))
+    });
+  }
+
+  const timezone = SpreadsheetApp.openById(CONFIG.spreadsheetId)
+    .getSpreadsheetTimeZone() || Session.getScriptTimeZone();
+  const monthFilter = String(requestedMonth || '').trim();
+  const sales = [];
+
+  for (let row = 1; row < salesData.length; row++) {
+    const source = salesData[row];
+    const saleId = cell_(source, salesHeaders, 'idVenta');
+    if (!saleId) continue;
+    const rawDate = source[salesHeaders['Fecha']];
+    const validDate = rawDate instanceof Date && !isNaN(rawDate.getTime());
+    const month = cell_(source, salesHeaders, 'Mes')
+      || (validDate ? Utilities.formatDate(rawDate, timezone, 'yyyy-MM') : 'Sin fecha');
+    if (monthFilter && month !== monthFilter) continue;
+    sales.push({
+      id: saleId,
+      timestamp: validDate ? rawDate.getTime() : 0,
+      date: validDate ? Utilities.formatDate(rawDate, timezone, 'dd/MM/yyyy HH:mm')
+        : String(rawDate || ''),
+      month: month,
+      seller: cell_(source, salesHeaders, 'Vendedor'),
+      total: number_(cell_(source, salesHeaders, 'Total')),
+      payment: cell_(source, salesHeaders, 'Medios de pago'),
+      status: cell_(source, salesHeaders, 'Estado'),
+      details: detailsBySale[saleId] || []
+    });
+  }
+
+  sales.sort(function(a, b) { return b.timestamp - a.timestamp; });
+  return { ok: true, sales: sales };
 }
 
 function createSale_(body) {
@@ -120,7 +199,9 @@ function createSale_(body) {
       if (rowIndex < 1) throw new Error('Artículo inexistente: ' + line.productId);
       const quantity = Math.floor(Number(line.quantity));
       const unitPrice = Number(line.unitPrice);
-      const stock = number_(productData[rowIndex][productHeaders['Stock Actual']]);
+      const stockHeader = productHeaders['Stock Actual 2'] !== undefined
+        ? productHeaders['Stock Actual 2'] : productHeaders['Stock Actual'];
+      const stock = number_(productData[rowIndex][stockHeader]);
       if (!quantity || quantity < 1) throw new Error('Cantidad inválida');
       if (stock < quantity) {
         throw new Error(
@@ -135,8 +216,7 @@ function createSale_(body) {
         productId: String(line.productId),
         quantity: quantity,
         unitPrice: unitPrice,
-        total: lineTotal,
-        newStock: stock - quantity
+        total: lineTotal
       });
     });
 
@@ -150,6 +230,9 @@ function createSale_(body) {
 
     const saleId = Utilities.getUuid().split('-')[0].toUpperCase();
     const now = new Date();
+    const timezone = SpreadsheetApp.openById(CONFIG.spreadsheetId)
+      .getSpreadsheetTimeZone() || Session.getScriptTimeZone();
+    const saleMonth = Utilities.formatDate(now, timezone, 'yyyy-MM');
     const paymentSummary = body.payments.map(function(payment) {
       const installments = Number(payment.installments || 0);
       return payment.method + (installments ? ' (' + installments + ' cuotas)' : '')
@@ -159,6 +242,7 @@ function createSale_(body) {
     appendMappedRow_(salesSheet, salesHeaders, {
       idVenta: saleId,
       Fecha: now,
+      Mes: saleMonth,
       idClientes: String(body.customerId || ''),
       Vendedor: String(body.seller || ''),
       Total: total,
@@ -185,15 +269,95 @@ function createSale_(body) {
       detailsSheet.getLastRow() + 1, 1, detailRows.length, detailsSheet.getLastColumn()
     ).setValues(detailRows);
 
-    const stockColumn = productHeaders['Stock Actual'] + 1;
-    resolved.forEach(function(line) {
-      productsSheet.getRange(line.rowIndex + 1, stockColumn).setValue(line.newStock);
-    });
     SpreadsheetApp.flush();
     return { ok: true, saleId: saleId, total: total };
   } finally {
     lock.releaseLock();
   }
+}
+
+function createProduct_(body) {
+  const product = body.product || {};
+  if (!String(product.name || '').trim()) throw new Error('Falta el nombre');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = sheet_(CONFIG.sheets.products);
+    const headers = headerMap_(sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]);
+    const id = Utilities.getUuid().replace(/-/g, '').substring(0, 8);
+    const row = sheet.getLastRow() + 1;
+    if (row > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), 1);
+    prepareNewProductRow_(sheet, row);
+    writeProductFields_(sheet, headers, row, product, true, id);
+    SpreadsheetApp.flush();
+    return { ok: true, productId: id };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Conserva en cada alta las validaciones, el formato y las fórmulas de la tabla
+ * (especialmente Stock Actual 2). Así la fila también funciona en AppSheet y web.
+ */
+function prepareNewProductRow_(sheet, row) {
+  if (row <= 2) return;
+  const columns = sheet.getLastColumn();
+  const source = sheet.getRange(row - 1, 1, 1, columns);
+  const target = sheet.getRange(row, 1, 1, columns);
+  source.copyTo(target, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+  source.copyTo(target, SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
+  const formulas = source.getFormulasR1C1()[0];
+  formulas.forEach(function(formula, column) {
+    if (formula) target.getCell(1, column + 1).setFormulaR1C1(formula);
+  });
+}
+
+function updateProduct_(body) {
+  const product = body.product || {};
+  const id = String(product.id || '');
+  if (!id) throw new Error('Falta el artículo');
+  if (!String(product.name || '').trim()) throw new Error('Falta el nombre');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = sheet_(CONFIG.sheets.products);
+    const values = sheet.getDataRange().getValues();
+    const headers = headerMap_(values[0]);
+    const index = findRowByValue_(values, headers['idArticulos'], id);
+    if (index < 1) throw new Error('Artículo inexistente');
+    writeProductFields_(sheet, headers, index + 1, product, false, id);
+    SpreadsheetApp.flush();
+    return { ok: true, productId: id };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function writeProductFields_(sheet, headers, row, product, creating, id) {
+  const values = {
+    Nombre: String(product.name || '').trim(),
+    'Categoría': String(product.category || '').trim(),
+    'Precio Efectivo': number_(product.cashPrice),
+    'Precio en 3 Cuotas': number_(product.cardPrice),
+    idArticulos: id,
+    Codigo: String(product.code || '').trim(),
+    Tipo: String(product.type || 'Accesorio').trim(),
+    Fecha: creating ? new Date() : undefined,
+    'Costo en Dolares': number_(product.costUsd),
+    'Descripcion ': String(product.description || '').trim(),
+    'Stock Minimo': Math.max(0, Math.floor(number_(product.minimumStock))),
+    Codigo_Backup: String(product.backupCode || '').trim()
+  };
+  if (creating) {
+    values['Stock Inicial'] = Math.max(0, Math.floor(number_(product.initialStock)));
+    values['Stock Actual'] = values['Stock Inicial'];
+  }
+  Object.keys(values).forEach(function(name) {
+    if (values[name] !== undefined && headers[name] !== undefined) {
+      sheet.getRange(row, headers[name] + 1).setValue(values[name]);
+    }
+  });
 }
 
 function uploadProductPhoto_(body) {
@@ -213,12 +377,33 @@ function uploadProductPhoto_(body) {
   if (rowIndex < 1) throw new Error('Artículo inexistente');
   const relativePath = 'Articulos_Images/' + fileName;
   sheet.getRange(rowIndex + 1, headers['Foto'] + 1).setValue(relativePath);
+  SpreadsheetApp.flush();
   return { ok: true, path: relativePath };
+}
+
+function getProductPhoto_(productId) {
+  if (!productId) throw new Error('Falta el artículo');
+  const sheet = sheet_(CONFIG.sheets.products);
+  const values = sheet.getDataRange().getValues();
+  const headers = headerMap_(values[0]);
+  const rowIndex = findRowByValue_(values, headers['idArticulos'], String(productId));
+  if (rowIndex < 1) throw new Error('Artículo inexistente');
+  const path = String(values[rowIndex][headers['Foto']] || '');
+  const fileName = path.split('/').pop();
+  if (!fileName) throw new Error('El artículo no tiene foto');
+  const files = DriveApp.getFolderById(CONFIG.photoFolderId).getFilesByName(fileName);
+  if (!files.hasNext()) throw new Error('No se encontró la foto');
+  const blob = files.next().getBlob();
+  return {
+    ok: true,
+    mimeType: blob.getContentType(),
+    base64: Utilities.base64Encode(blob.getBytes())
+  };
 }
 
 function ensureColumns_() {
   ensureHeaders_(sheet_(CONFIG.sheets.sales), [
-    'idVenta', 'Fecha', 'idClientes', 'Vendedor', 'Total',
+    'idVenta', 'Fecha', 'Mes', 'idClientes', 'Vendedor', 'Total',
     'Medios de pago', 'Pagos JSON', 'Estado', 'requestId'
   ]);
   ensureHeaders_(sheet_(CONFIG.sheets.details), [
