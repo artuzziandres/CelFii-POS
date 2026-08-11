@@ -20,6 +20,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.widget.ArrayAdapter;
+import android.widget.AdapterView;
 import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.EditText;
@@ -47,6 +48,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Calendar;
 
 public final class MainActivity extends Activity {
     private static final int BLACK = Color.rgb(9, 11, 10);
@@ -79,8 +81,11 @@ public final class MainActivity extends Activity {
     private static final int CAMERA_REQUEST = 501;
     private static final int BLUETOOTH_REQUEST = 502;
     private static final int PRODUCT_PHOTO_REQUEST = 503;
-    private Bitmap pendingProductPhoto;
-    private ImageView pendingPhotoPreview;
+    private final Bitmap[] pendingProductPhotos = new Bitmap[3];
+    private final ImageView[] pendingPhotoPreviews = new ImageView[3];
+    private int pendingPhotoSlot;
+    private String selectedTypeFilter = "Todos";
+    private static final String[] PRODUCT_TYPES = {"Todos", "Accesorios", "Repuestos", "Equipos"};
     private static final String[] SELLERS = {
             "Andres", "Maxi", "Gaby", "Facu", "Malena", "Benjamin", "Alejandra", "Elio"
     };
@@ -164,6 +169,7 @@ public final class MainActivity extends Activity {
                 : catalog.size() + " productos disponibles", 12, MUTED, false);
         hint.setPadding(0, 0, 0, dp(8));
         page.addView(hint);
+        page.addView(typeFilter());
         page.addView(searchBox());
         ListView list = productList();
         page.addView(list, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -188,10 +194,12 @@ public final class MainActivity extends Activity {
         page.setPadding(dp(14), dp(7), dp(14), dp(10));
         LinearLayout titleRow = row();
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        titleRow.addView(label("Productos", 26, WHITE, true),
+        int expired = countExpiredReservations();
+        titleRow.addView(label(expired > 0 ? "Productos · ⚠ " + expired : "Productos",
+                        26, expired > 0 ? RED : WHITE, true),
                 new LinearLayout.LayoutParams(0, -2, 1));
         Button create = actionButton("NUEVO", true);
-        create.setOnClickListener(v -> showProductEditor(null));
+        create.setOnClickListener(v -> chooseProductType());
         titleRow.addView(create, new LinearLayout.LayoutParams(dp(88), dp(48)));
         Button update = actionButton("ACTUALIZAR", false);
         update.setOnClickListener(v -> synchronize(true));
@@ -203,6 +211,7 @@ public final class MainActivity extends Activity {
                 12, MUTED, false);
         hint.setPadding(0, 0, 0, dp(8));
         page.addView(hint);
+        page.addView(typeFilter());
         page.addView(searchBox());
         page.addView(productList(), new LinearLayout.LayoutParams(-1, 0, 1));
         content.addView(page);
@@ -240,6 +249,27 @@ public final class MainActivity extends Activity {
         rowParams.bottomMargin = dp(8);
         searchRow.setLayoutParams(rowParams);
         return searchRow;
+    }
+
+    private View typeFilter() {
+        Spinner spinner = new Spinner(this);
+        spinner.setAdapter(new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item, PRODUCT_TYPES));
+        for (int i = 0; i < PRODUCT_TYPES.length; i++) {
+            if (PRODUCT_TYPES[i].equals(selectedTypeFilter)) spinner.setSelection(i);
+        }
+        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view,
+                                                  int position, long id) {
+                selectedTypeFilter = PRODUCT_TYPES[position];
+                filterProducts(activeSearch == null ? "" : activeSearch.getText().toString());
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) { }
+        });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(48));
+        params.bottomMargin = dp(7);
+        spinner.setLayoutParams(params);
+        return spinner;
     }
 
     private void scanBarcode(EditText destination) {
@@ -316,11 +346,29 @@ public final class MainActivity extends Activity {
         String needle = query == null ? "" : query.trim().toLowerCase();
         List<Product> result = new ArrayList<>();
         for (Product product : catalog) {
+            if (product.isSold()) continue;
+            if (!matchesTypeFilter(product)) continue;
             if (!productsTab && needle.isEmpty() && product.stock <= 0) continue;
             if (needle.isEmpty() || product.searchable().contains(needle)) result.add(product);
             if (result.size() == 120) break;
         }
         activeAdapter.setItems(result);
+    }
+
+    private boolean matchesTypeFilter(Product product) {
+        if ("Todos".equals(selectedTypeFilter)) return true;
+        String type = product.type == null || product.type.isBlank() ? "Accesorio" : product.type;
+        String normalized = type.toLowerCase(Locale.ROOT);
+        if ("Accesorios".equals(selectedTypeFilter)) return normalized.startsWith("accesorio");
+        if ("Repuestos".equals(selectedTypeFilter)) return normalized.startsWith("repuesto");
+        return normalized.startsWith("equipo");
+    }
+
+    private void chooseProductType() {
+        String[] choices = {"Accesorio", "Repuesto", "Equipo"};
+        new AlertDialog.Builder(this).setTitle("¿Qué querés cargar?")
+                .setItems(choices, (dialog, which) -> showProductEditor(null, choices[which]))
+                .setNegativeButton("Cancelar", null).show();
     }
 
     private void synchronize(boolean announce) {
@@ -363,7 +411,22 @@ public final class MainActivity extends Activity {
         syncStatus.setText("● " + products.size() + " PRODUCTOS");
         syncStatus.setTextColor(LIME);
         if (activeSearch != null) filterProducts(activeSearch.getText().toString());
+        int expired = countExpiredReservations();
+        if (expired > 0) toast("Hay " + expired + " reserva(s) vencida(s) para revisar");
         if (announce && !fromCache) toast("Catálogo y stock actualizados");
+    }
+
+    private int countExpiredReservations() {
+        int count = 0;
+        SimpleDateFormat format = new SimpleDateFormat("dd/MM/yyyy", Locale.getDefault());
+        format.setLenient(false);
+        Date today = new Date();
+        for (Product product : catalog) if (product.isReserved()
+                && product.reservationExpiry != null && !product.reservationExpiry.isBlank()) {
+            try { if (format.parse(product.reservationExpiry).before(today)) count++; }
+            catch (Exception ignored) { }
+        }
+        return count;
     }
 
     private void addProduct(Product product) {
@@ -384,9 +447,12 @@ public final class MainActivity extends Activity {
             row.setPadding(0, dp(7), 0, dp(7));
             LinearLayout copy = column();
             copy.addView(label(line.product.name, 14, WHITE, true));
-            copy.addView(label(line.quantity + " × " + money(line.product.cashPrice)
+            copy.addView(label(line.quantity + " × " + money(line.unitPrice)
                     + " = " + money(line.total()), 12, MUTED, false));
             row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+            Button price = actionButton("PRECIO", false);
+            price.setOnClickListener(v -> changeCartPrice(line));
+            row.addView(price, new LinearLayout.LayoutParams(dp(92), dp(42)));
             box.addView(row);
         }
         ScrollView scroll = new ScrollView(this);
@@ -397,12 +463,33 @@ public final class MainActivity extends Activity {
                 .setPositiveButton("Imprimir", (d, w) -> printCurrentSale()).show();
     }
 
+    private void changeCartPrice(CartLine line) {
+        EditText value = editorInput("Precio final", plainNumber(line.unitPrice), true);
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle(line.product.name)
+                .setView(value).setNegativeButton("Cancelar", null)
+                .setPositiveButton("Guardar", null).create();
+        dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(v -> {
+                    if (decimal(value) <= 0) { toast("Ingresá un precio válido"); return; }
+                    line.unitPrice = decimal(value); dialog.dismiss();
+                    toast("Precio actualizado. Cerrá y volvé a abrir el ticket para verlo.");
+                }));
+        dialog.show();
+    }
+
     private void printCurrentSale() {
         StringBuilder rows = new StringBuilder();
         for (CartLine line : cart.values()) {
             rows.append(line.product.name).append('\n')
-                    .append(line.quantity).append(" x ").append(money(line.product.cashPrice))
+                    .append(line.product.isEquipment() ? "IMEI: " + line.product.imei + "\n" : "")
+                    .append(line.quantity).append(" x ").append(money(line.unitPrice))
                     .append("    ").append(money(line.total())).append('\n');
+            if (line.product.isReserved() && line.product.reservationDeposit > 0) {
+                rows.append("Total: ").append(money(line.total())).append('\n')
+                        .append("Seña: ").append(money(line.product.reservationDeposit)).append('\n')
+                        .append("Saldo: ").append(money(Math.max(0,
+                                line.total() - line.product.reservationDeposit))).append('\n');
+            }
         }
         String date = new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
                 .format(new Date());
@@ -433,6 +520,18 @@ public final class MainActivity extends Activity {
             if (SELLERS[i].equals(selectedSeller)) sellerSpinner.setSelection(i);
         }
         box.addView(sellerSpinner);
+        boolean hasEquipment = false;
+        for (CartLine line : cart.values()) if (line.product.isEquipment()) hasEquipment = true;
+        EditText customerName = editorInput("Comprador (opcional)", "", false);
+        EditText customerPhone = editorInput("Teléfono (opcional)", "", false);
+        Spinner warranty = new Spinner(this);
+        warranty.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
+                new String[]{"Sin garantía", "30 días", "60 días", "90 días"}));
+        if (hasEquipment) {
+            box.addView(customerName); box.addView(customerPhone);
+            TextView warrantyLabel = label("Garantía", 12, MUTED, true);
+            warrantyLabel.setPadding(0, dp(10), 0, 0); box.addView(warrantyLabel); box.addView(warranty);
+        }
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Finalizar venta · " + money(cartTotal())).setView(box)
                 .setNegativeButton("Cancelar", null)
@@ -442,30 +541,46 @@ public final class MainActivity extends Activity {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
                 String method = String.valueOf(methods.getSelectedItem());
                 selectedSeller = String.valueOf(sellerSpinner.getSelectedItem());
-                saveSale(method, true);
+                saveSale(method, customerName.getText().toString().trim(),
+                        customerPhone.getText().toString().trim(), warranty.getSelectedItemPosition() * 30, true);
                 dialog.dismiss();
             });
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
                     String method = String.valueOf(methods.getSelectedItem());
                     selectedSeller = String.valueOf(sellerSpinner.getSelectedItem());
-                    saveSale(method, false);
+                    saveSale(method, customerName.getText().toString().trim(),
+                            customerPhone.getText().toString().trim(), warranty.getSelectedItemPosition() * 30, false);
                     dialog.dismiss();
                 });
         });
         dialog.show();
     }
 
-    private void saveSale(String payment, boolean printAfterSave) {
+    private void saveSale(String payment, String customerName, String customerPhone,
+                          int warrantyDays, boolean printAfterSave) {
         String id = UUID.randomUUID().toString();
         String date = new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(new Date());
         StringBuilder details = new StringBuilder();
         for (CartLine line : cart.values()) {
+            if (line.product.isEquipment() && (line.product.imei == null
+                    || line.product.imei.trim().isEmpty())) {
+                toast("Completá el IMEI de " + line.product.name + " antes de vender");
+                return;
+            }
+            if (line.product.isReserved() && line.product.reservationDeposit > line.total()) {
+                toast("La seña supera el precio final de " + line.product.name);
+                return;
+            }
             if (details.length() > 0) details.append("\n\n");
             details.append(line.product.name)
+                    .append(line.product.isEquipment() ? "\nIMEI: " + line.product.imei : "")
                     .append("\n")
                     .append(line.quantity).append(" × ")
-                    .append(money(line.product.cashPrice))
-                    .append(" = ").append(money(line.total()));
+                    .append(money(line.unitPrice)).append(" = ").append(money(line.total()));
+            if (Math.abs(line.unitPrice - line.product.cashPrice) > .01)
+                details.append("\nOriginal: ").append(money(line.product.cashPrice))
+                        .append(" · Diferencia: ")
+                        .append(money((line.unitPrice - line.product.cashPrice) * line.quantity));
         }
         final String savedDetails = details.toString();
         if (!api.configured()) {
@@ -475,7 +590,8 @@ public final class MainActivity extends Activity {
         if (saleSaving) return;
         saleSaving = true;
         toast("Guardando venta y descontando stock…");
-        api.createSale(id, selectedSeller, payment, cart.values(), new CelFiiApi.Callback<>() {
+        api.createSale(id, selectedSeller, payment, customerName, customerPhone, warrantyDays,
+                cart.values(), new CelFiiApi.Callback<>() {
             @Override public void success(String saleId) {
                 runOnUiThread(() -> {
                     saleSaving = false;
@@ -737,35 +853,144 @@ public final class MainActivity extends Activity {
     }
 
     private void showProduct(Product product) {
-        new AlertDialog.Builder(this).setTitle(product.name)
-                .setMessage(product.category + "\n\nEfectivo: " + money(product.cashPrice)
-                        + "\nCrédito: " + money(product.creditPrice)
-                        + "\nStock: " + product.stock + "\nCódigo: " + product.code)
-                .setNegativeButton("Cerrar", null)
-                .setPositiveButton("Editar", (dialog, which) -> showProductEditor(product)).show();
+        String details = product.type + "\n" + product.category + "\n\nPrecio: "
+                + money(product.cashPrice) + "\nStock: " + product.stock;
+        if (product.isEquipment()) details += "\nIMEI: " + product.imei + "\nMemoria: "
+                + product.memory + "\nColor: " + product.color + "\nCondición: "
+                + product.condition + "\nBatería: " + product.battery + "\nEstado: "
+                + product.equipmentStatus + "\n" + product.observations;
+        AlertDialog.Builder builder = new AlertDialog.Builder(this).setTitle(product.name)
+                .setMessage(details)
+                .setPositiveButton("Editar", (dialog, which) -> showProductEditor(product));
+        if (product.isEquipment()) {
+            builder.setNegativeButton("Agregar a venta", (d, w) -> addProduct(product));
+            builder.setNeutralButton(product.isReserved() ? "Cancelar reserva" : "Reservar",
+                    (d, w) -> { if (product.isReserved()) cancelReservation(product);
+                        else showReservation(product); });
+        } else builder.setNegativeButton("Cerrar", null);
+        builder.show();
+    }
+
+    private void showReservation(Product product) {
+        LinearLayout box = column();
+        box.setPadding(dp(18), dp(4), dp(18), 0);
+        EditText customer = editorInput("Cliente (opcional)", "", false);
+        EditText phone = editorInput("Teléfono (opcional)", "", false);
+        EditText deposit = editorInput("Seña", "0", true);
+        EditText days = editorInput("Días de reserva (máximo 30)", "7", true);
+        box.addView(customer); box.addView(phone); box.addView(deposit); box.addView(days);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Reservar · " + product.name).setView(box)
+                .setNegativeButton("Cancelar", null).setNeutralButton("Guardar", null)
+                .setPositiveButton("Guardar e imprimir", null).create();
+        dialog.setOnShowListener(x -> {
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v ->
+                    saveReservation(product, customer, phone, deposit, days, false, dialog));
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v ->
+                    saveReservation(product, customer, phone, deposit, days, true, dialog));
+        });
+        dialog.show();
+    }
+
+    private void saveReservation(Product product, EditText customer, EditText phone,
+                                 EditText deposit, EditText days, boolean print,
+                                 AlertDialog dialog) {
+        int duration = Math.max(1, Math.min(30, integer(days)));
+        double depositValue = Math.max(0, decimal(deposit));
+        if (depositValue > product.cashPrice) { toast("La seña supera el precio"); return; }
+        Calendar expiry = Calendar.getInstance(); expiry.add(Calendar.DAY_OF_YEAR, duration);
+        SimpleDateFormat format = new SimpleDateFormat("dd/MM/yyyy", Locale.getDefault());
+        Product reserved = product.withReservation("Reservado",
+                customer.getText().toString().trim(), phone.getText().toString().trim(),
+                depositValue, format.format(new Date()), format.format(expiry.getTime()));
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setEnabled(false);
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+        api.saveProduct(reserved, 1, false, new CelFiiApi.Callback<>() {
+            @Override public void success(String id) { runOnUiThread(() -> {
+                dialog.dismiss();
+                if (print) printReservation(reserved);
+                toast("Equipo reservado hasta " + reserved.reservationExpiry);
+                synchronize(false);
+            }); }
+            @Override public void error(String message) { runOnUiThread(() -> {
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setEnabled(true);
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);
+                toast("No se guardó la reserva: " + message);
+            }); }
+        });
+    }
+
+    private void cancelReservation(Product product) {
+        Product available = product.withReservation("Disponible", "", "", 0, "", "");
+        api.saveProduct(available, 1, false, new CelFiiApi.Callback<>() {
+            @Override public void success(String id) { runOnUiThread(() -> {
+                toast("Reserva cancelada"); synchronize(false); }); }
+            @Override public void error(String message) { runOnUiThread(() ->
+                    toast("No se canceló: " + message)); }
+        });
+    }
+
+    private void printReservation(Product product) {
+        double balance = Math.max(0, product.cashPrice - product.reservationDeposit);
+        String details = product.name + "\nIMEI: " + product.imei + "\n"
+                + "Total: " + money(product.cashPrice) + "\nSeña: "
+                + money(product.reservationDeposit) + "\nSaldo: " + money(balance);
+        printDirect(ticketBytes(new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+                .format(new Date()), selectedSeller, "RESERVA", details, product.cashPrice));
     }
 
     private void showProductEditor(Product current) {
+        showProductEditor(current, current == null ? "Accesorio" : current.type);
+    }
+
+    private void showProductEditor(Product current, String selectedType) {
         if (!api.configured()) { toast("Falta configurar Google Sheets"); return; }
-        pendingProductPhoto = null;
+        for (int i = 0; i < 3; i++) { pendingProductPhotos[i] = null; pendingPhotoPreviews[i] = null; }
+        final boolean equipment = "Equipo".equalsIgnoreCase(selectedType);
         LinearLayout form = column();
         form.setPadding(dp(18), dp(4), dp(18), dp(8));
-        pendingPhotoPreview = new ImageView(this);
-        pendingPhotoPreview.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        if (current != null) imageLoader.load(pendingPhotoPreview, photoMap.urlFor(current), api);
-        else pendingPhotoPreview.setImageResource(R.drawable.logo_celfii_app);
-        form.addView(pendingPhotoPreview, new LinearLayout.LayoutParams(-1, dp(145)));
-        Button photo = actionButton("ELEGIR FOTO", false);
-        photo.setOnClickListener(v -> chooseProductPhoto());
-        form.addView(photo, new LinearLayout.LayoutParams(-1, dp(48)));
-        EditText name = editorInput("Nombre", current == null ? "" : current.name, false);
+        int photoCount = equipment ? 3 : 1;
+        for (int slot = 0; slot < photoCount; slot++) {
+            final int selectedSlot = slot;
+            ImageView preview = new ImageView(this);
+            pendingPhotoPreviews[slot] = preview;
+            preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            String existing = current == null ? "" : (slot == 0 ? photoMap.urlFor(current)
+                    : "celfii-photo://" + current.id + "?slot=" + (slot + 1));
+            if (current != null && !(slot > 0 && (slot == 1 ? current.photo2 : current.photo3).isBlank()))
+                loadProductPhoto(preview, existing, current.id, slot + 1);
+            else preview.setImageResource(R.drawable.logo_celfii_app);
+            form.addView(preview, new LinearLayout.LayoutParams(-1, dp(120)));
+            Button photo = actionButton("ELEGIR FOTO " + (slot + 1), false);
+            photo.setOnClickListener(v -> chooseProductPhoto(selectedSlot));
+            form.addView(photo, new LinearLayout.LayoutParams(-1, dp(46)));
+        }
+        EditText name = editorInput(equipment ? "Modelo *" : "Nombre *",
+                current == null ? "" : current.name, false);
         EditText category = editorInput("Categoría", current == null ? "" : current.category, false);
-        EditText cash = editorInput("Precio efectivo", current == null ? "" : plainNumber(current.cashPrice), true);
+        EditText cash = editorInput("Precio efectivo/transferencia *",
+                current == null ? "" : plainNumber(current.cashPrice), true);
         EditText card = editorInput("Precio Posnet", current == null ? "" : plainNumber(current.creditPrice), true);
-        EditText stock = editorInput("Stock inicial", current == null ? "0" : String.valueOf(current.stock), true);
+        EditText stock = editorInput("Stock inicial *", current == null ? (equipment ? "1" : "0") : String.valueOf(current.stock), true);
         stock.setEnabled(current == null);
+        if (equipment) { stock.setText("1"); stock.setVisibility(View.GONE); card.setVisibility(View.GONE); category.setVisibility(View.GONE); }
         EditText code = editorInput("Código de barras", current == null ? "" : current.code, false);
         EditText backup = editorInput("Código alternativo", current == null ? "" : current.backupCode, false);
+        EditText brand = editorInput("Marca", current == null ? "" : current.brand, false);
+        EditText compatible = editorInput("Modelos compatibles", current == null ? "" : current.compatibleModels, false);
+        EditText color = editorInput("Color", current == null ? "" : current.color, false);
+        EditText supplier = editorInput("Proveedor", current == null ? "" : current.supplier, false);
+        EditText quality = editorInput("Calidad", current == null ? "" : current.quality, false);
+        EditText replacementWarranty = editorInput("Garantía del repuesto", current == null ? "" : current.warrantyInfo, false);
+        EditText imei = editorInput("IMEI", current == null ? "" : current.imei, false);
+        EditText memory = editorInput("Memoria", current == null ? "" : current.memory, false);
+        EditText battery = editorInput("Estado de batería", current == null ? "" : current.battery, false);
+        EditText observations = editorInput("Observaciones particulares", current == null ? "" : current.observations, false);
+        EditText cost = editorInput("Costo", current == null ? "" : plainNumber(current.cost), true);
+        Spinner condition = new Spinner(this);
+        condition.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
+                new String[]{"Nuevo", "Usado"}));
+        if (current != null && "Usado".equalsIgnoreCase(current.condition)) condition.setSelection(1);
         LinearLayout codeRow = row();
         code.setLayoutParams(new LinearLayout.LayoutParams(0, dp(52), 1));
         codeRow.addView(code);
@@ -783,7 +1008,15 @@ public final class MainActivity extends Activity {
         codeRowParams.topMargin = dp(7);
         codeRow.setLayoutParams(codeRowParams);
         form.addView(name); form.addView(category); form.addView(cash); form.addView(card);
-        form.addView(stock); form.addView(codeRow); form.addView(backup);
+        form.addView(stock); form.addView(brand);
+        if (equipment) {
+            form.addView(memory); form.addView(color); form.addView(condition); form.addView(battery);
+            form.addView(imei); form.addView(observations); form.addView(cost);
+        } else {
+            form.addView(compatible); form.addView(color); form.addView(supplier);
+            if ("Repuesto".equalsIgnoreCase(selectedType)) { form.addView(quality); form.addView(replacementWarranty); }
+            form.addView(codeRow); form.addView(backup); form.addView(cost);
+        }
         ScrollView scroll = new ScrollView(this);
         scroll.addView(form);
         AlertDialog dialog = new AlertDialog.Builder(this)
@@ -795,15 +1028,28 @@ public final class MainActivity extends Activity {
                     if (name.getText().toString().trim().isEmpty()) {
                         toast("Ingresá el nombre del producto"); return;
                     }
+                    if (decimal(cash) <= 0) { toast("Ingresá el precio"); return; }
+                    if (!equipment && integer(stock) <= 0 && current == null) { toast("Ingresá el stock"); return; }
                     Product value = new Product(current == null ? "" : current.id,
                             name.getText().toString().trim(), category.getText().toString().trim(),
                             decimal(cash), decimal(card), current == null ? integer(stock) : current.stock,
-                            current == null ? "" : current.photo, code.getText().toString().trim(),
-                            backup.getText().toString().trim(), current == null ? "Accesorio" : current.type,
-                            current == null ? "" : current.description,
-                            current == null ? 0 : current.minimumStock);
+                            current == null ? "" : current.photo, current == null ? "" : current.photo2,
+                            current == null ? "" : current.photo3, "", code.getText().toString().trim(),
+                            backup.getText().toString().trim(), selectedType, current == null ? "" : current.description,
+                            current == null ? 0 : current.minimumStock, brand.getText().toString().trim(),
+                            compatible.getText().toString().trim(), color.getText().toString().trim(),
+                            supplier.getText().toString().trim(), quality.getText().toString().trim(),
+                            replacementWarranty.getText().toString().trim(), imei.getText().toString().trim(),
+                            memory.getText().toString().trim(), String.valueOf(condition.getSelectedItem()),
+                            battery.getText().toString().trim(), observations.getText().toString().trim(),
+                            current == null ? "Disponible" : current.equipmentStatus,
+                            current == null ? "" : current.reservationCustomer,
+                            current == null ? "" : current.reservationPhone,
+                            current == null ? 0 : current.reservationDeposit,
+                            current == null ? "" : current.reservationDate,
+                            current == null ? "" : current.reservationExpiry, decimal(cost));
                     dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
-                    saveProduct(value, integer(stock), current == null, dialog);
+                    saveProduct(value, equipment ? 1 : integer(stock), current == null, dialog);
                 }));
         dialog.show();
     }
@@ -812,19 +1058,7 @@ public final class MainActivity extends Activity {
         toast("Guardando producto…");
         api.saveProduct(value, initialStock, creating, new CelFiiApi.Callback<>() {
             @Override public void success(String productId) {
-                Bitmap photo = pendingProductPhoto;
-                if (photo == null) runOnUiThread(() -> productSaved(dialog));
-                else api.uploadPhoto(productId, photo, new CelFiiApi.Callback<>() {
-                    @Override public void success(String path) {
-                        runOnUiThread(() -> productSaved(dialog));
-                    }
-                    @Override public void error(String message) {
-                        runOnUiThread(() -> {
-                            toast("Producto guardado; la foto falló: " + message);
-                            productSaved(dialog);
-                        });
-                    }
-                });
+                uploadPendingPhotos(productId, 0, dialog);
             }
             @Override public void error(String message) {
                 runOnUiThread(() -> {
@@ -835,15 +1069,28 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private void uploadPendingPhotos(String productId, int slot, AlertDialog dialog) {
+        if (slot >= pendingProductPhotos.length) { runOnUiThread(() -> productSaved(dialog)); return; }
+        Bitmap bitmap = pendingProductPhotos[slot];
+        if (bitmap == null) { uploadPendingPhotos(productId, slot + 1, dialog); return; }
+        api.uploadPhoto(productId, bitmap, slot + 1, new CelFiiApi.Callback<>() {
+            @Override public void success(String path) { uploadPendingPhotos(productId, slot + 1, dialog); }
+            @Override public void error(String message) { runOnUiThread(() -> {
+                toast("Producto guardado; falló la foto " + (slot + 1) + ": " + message);
+                productSaved(dialog);
+            }); }
+        });
+    }
+
     private void productSaved(AlertDialog dialog) {
-        pendingProductPhoto = null;
-        pendingPhotoPreview = null;
+        for (int i = 0; i < 3; i++) { pendingProductPhotos[i] = null; pendingPhotoPreviews[i] = null; }
         dialog.dismiss();
         toast("Producto guardado en Google Sheets");
         synchronize(true);
     }
 
-    private void chooseProductPhoto() {
+    private void chooseProductPhoto(int slot) {
+        pendingPhotoSlot = slot;
         Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
         intent.setType("image/*");
         startActivityForResult(Intent.createChooser(intent, "Elegir foto"), PRODUCT_PHOTO_REQUEST);
@@ -859,12 +1106,21 @@ public final class MainActivity extends Activity {
             int max = Math.max(original.getWidth(), original.getHeight());
             if (max > 1200) {
                 float scale = 1200f / max;
-                pendingProductPhoto = Bitmap.createScaledBitmap(original,
+                pendingProductPhotos[pendingPhotoSlot] = Bitmap.createScaledBitmap(original,
                         Math.round(original.getWidth() * scale),
                         Math.round(original.getHeight() * scale), true);
-            } else pendingProductPhoto = original;
-            if (pendingPhotoPreview != null) pendingPhotoPreview.setImageBitmap(pendingProductPhoto);
+            } else pendingProductPhotos[pendingPhotoSlot] = original;
+            if (pendingPhotoPreviews[pendingPhotoSlot] != null)
+                pendingPhotoPreviews[pendingPhotoSlot].setImageBitmap(pendingProductPhotos[pendingPhotoSlot]);
         } catch (Exception error) { toast("No se pudo abrir la foto"); }
+    }
+
+    private void loadProductPhoto(ImageView view, String url, String productId, int slot) {
+        if (slot == 1) { imageLoader.load(view, url, api); return; }
+        api.productPhoto(productId, slot, new CelFiiApi.Callback<>() {
+            @Override public void success(Bitmap bitmap) { view.post(() -> view.setImageBitmap(bitmap)); }
+            @Override public void error(String message) { }
+        });
     }
 
     private EditText editorInput(String hint, String value, boolean numeric) {
@@ -927,7 +1183,10 @@ public final class MainActivity extends Activity {
             TextView name = label(product.name, 14, WHITE, true);
             name.setMaxLines(2);
             copy.addView(name);
-            copy.addView(label(product.category + " · Stock " + product.stock,
+            String subtitle = product.type + (product.isEquipment()
+                    ? " · " + product.memory + " · " + product.color + " · " + product.equipmentStatus
+                    : " · " + product.category + " · Stock " + product.stock);
+            copy.addView(label(subtitle,
                     11, MUTED, false));
             copy.addView(label(money(product.cashPrice), 16, LIME, true));
             card.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
@@ -941,8 +1200,9 @@ public final class MainActivity extends Activity {
     static final class CartLine {
         final Product product;
         int quantity = 1;
-        CartLine(Product product) { this.product = product; }
-        double total() { return quantity * product.cashPrice; }
+        double unitPrice;
+        CartLine(Product product) { this.product = product; this.unitPrice = product.cashPrice; }
+        double total() { return quantity * unitPrice; }
     }
 
     private LinearLayout panel() {
