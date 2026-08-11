@@ -485,8 +485,7 @@ public final class MainActivity extends Activity {
                     .append(line.quantity).append(" x ").append(money(line.unitPrice))
                     .append("    ").append(money(line.total())).append('\n');
             if (line.product.isReserved() && line.product.reservationDeposit > 0) {
-                rows.append("Total: ").append(money(line.total())).append('\n')
-                        .append("Seña: ").append(money(line.product.reservationDeposit)).append('\n')
+                rows.append("Seña: ").append(money(line.product.reservationDeposit)).append('\n')
                         .append("Saldo: ").append(money(Math.max(0,
                                 line.total() - line.product.reservationDeposit))).append('\n');
             }
@@ -932,8 +931,7 @@ public final class MainActivity extends Activity {
 
     private void printReservation(Product product) {
         double balance = Math.max(0, product.cashPrice - product.reservationDeposit);
-        String details = product.name + "\nIMEI: " + product.imei + "\n"
-                + "Total: " + money(product.cashPrice) + "\nSeña: "
+        String details = product.name + "\nIMEI: " + product.imei + "\nSeña: "
                 + money(product.reservationDeposit) + "\nSaldo: " + money(balance);
         printDirect(ticketBytes(new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
                 .format(new Date()), selectedSeller, "RESERVA", details, product.cashPrice));
