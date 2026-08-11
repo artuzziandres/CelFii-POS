@@ -938,7 +938,8 @@ public final class MainActivity extends Activity {
     }
 
     private void showProductEditor(Product current) {
-        showProductEditor(current, current == null ? "Accesorio" : current.type);
+        showProductEditor(current, current == null || current.type == null || current.type.isBlank()
+                ? "Accesorio" : current.type);
     }
 
     private void showProductEditor(Product current, String selectedType) {
