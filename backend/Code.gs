@@ -19,7 +19,8 @@ function doGet(e) {
     validateToken_(e.parameter.token);
     const action = String(e.parameter.action || '');
     if (action === 'products') return json_(getProducts_(e.parameter.q || ''));
-    if (action === 'productPhoto') return json_(getProductPhoto_(e.parameter.productId || ''));
+    if (action === 'productPhoto') return json_(getProductPhoto_(
+      e.parameter.productId || '', Number(e.parameter.slot || 1)));
     if (action === 'sales') return json_(getSales_(e.parameter.month || ''));
     if (action === 'health') return json_({ ok: true, service: 'Cel-Fii POS' });
     throw new Error('Acción no válida');
@@ -51,6 +52,7 @@ function setupCelFiiPos() {
 }
 
 function getProducts_(query) {
+  ensureProductColumns_();
   const sheet = sheet_(CONFIG.sheets.products);
   const values = sheet.getDataRange().getDisplayValues();
   if (values.length < 2) return { ok: true, products: [] };
@@ -85,6 +87,26 @@ function getProducts_(query) {
       description: cell_(source, headers, 'Descripcion '),
       minimumStock: Math.floor(number_(cell_(source, headers, 'Stock Minimo'))),
       costUsd: number_(cell_(source, headers, 'Costo en Dolares'))
+      ,photo2: cell_(source, headers, 'Foto_2')
+      ,photo3: cell_(source, headers, 'Foto_3')
+      ,brand: cell_(source, headers, 'Marca')
+      ,compatibleModels: cell_(source, headers, 'Modelos Compatibles')
+      ,color: cell_(source, headers, 'Color')
+      ,supplier: cell_(source, headers, 'Proveedor')
+      ,quality: cell_(source, headers, 'Calidad')
+      ,warrantyInfo: cell_(source, headers, 'Garantía Repuesto')
+      ,imei: cell_(source, headers, 'IMEI')
+      ,memory: cell_(source, headers, 'Memoria')
+      ,condition: cell_(source, headers, 'Condición')
+      ,battery: cell_(source, headers, 'Batería')
+      ,observations: cell_(source, headers, 'Observaciones')
+      ,equipmentStatus: cell_(source, headers, 'Estado Equipo') || 'Disponible'
+      ,reservationCustomer: cell_(source, headers, 'Reserva Cliente')
+      ,reservationPhone: cell_(source, headers, 'Reserva Teléfono')
+      ,reservationDeposit: number_(cell_(source, headers, 'Reserva Seña'))
+      ,reservationDate: cell_(source, headers, 'Reserva Fecha')
+      ,reservationExpiry: cell_(source, headers, 'Reserva Vencimiento')
+      ,cost: number_(cell_(source, headers, 'Costo'))
     });
   }
   return { ok: true, products: products };
@@ -108,7 +130,12 @@ function getSales_(requestedMonth) {
 
   for (let row = 1; row < productData.length; row++) {
     const id = cell_(productData[row], productHeaders, 'idArticulos');
-    if (id) productNames[id] = cell_(productData[row], productHeaders, 'Nombre');
+    if (id) {
+      productNames[id] = cell_(productData[row], productHeaders, 'Nombre');
+      if (normalize_(cell_(productData[row], productHeaders, 'Tipo')) === 'equipo') {
+        productNames[id] += '\nIMEI: ' + cell_(productData[row], productHeaders, 'IMEI');
+      }
+    }
   }
 
   for (let row = 1; row < detailData.length; row++) {
@@ -121,7 +148,9 @@ function getSales_(requestedMonth) {
       productId: productId,
       name: productNames[productId] || productId,
       quantity: Math.floor(number_(cell_(source, detailHeaders, 'Cantidad'))),
+      originalPrice: number_(cell_(source, detailHeaders, 'Precio Original')),
       unitPrice: number_(cell_(source, detailHeaders, 'Precio Unitario')),
+      difference: number_(cell_(source, detailHeaders, 'Diferencia')),
       total: number_(cell_(source, detailHeaders, 'Total'))
     });
   }
@@ -150,6 +179,9 @@ function getSales_(requestedMonth) {
       total: number_(cell_(source, salesHeaders, 'Total')),
       payment: cell_(source, salesHeaders, 'Medios de pago'),
       status: cell_(source, salesHeaders, 'Estado'),
+      customerName: cell_(source, salesHeaders, 'Cliente Nombre'),
+      customerPhone: cell_(source, salesHeaders, 'Cliente Teléfono'),
+      warrantyDays: Math.floor(number_(cell_(source, salesHeaders, 'Garantía Días'))),
       details: detailsBySale[saleId] || []
     });
   }
@@ -199,6 +231,8 @@ function createSale_(body) {
       if (rowIndex < 1) throw new Error('Artículo inexistente: ' + line.productId);
       const quantity = Math.floor(Number(line.quantity));
       const unitPrice = Number(line.unitPrice);
+      const originalPrice = Number(line.originalPrice === undefined
+        ? line.unitPrice : line.originalPrice);
       const stockHeader = productHeaders['Stock Actual 2'] !== undefined
         ? productHeaders['Stock Actual 2'] : productHeaders['Stock Actual'];
       const stock = number_(productData[rowIndex][stockHeader]);
@@ -216,6 +250,8 @@ function createSale_(body) {
         productId: String(line.productId),
         quantity: quantity,
         unitPrice: unitPrice,
+        originalPrice: originalPrice,
+        difference: round2_(lineTotal - quantity * originalPrice),
         total: lineTotal
       });
     });
@@ -250,6 +286,9 @@ function createSale_(body) {
       'Pagos JSON': JSON.stringify(body.payments),
       Estado: 'Confirmada',
       requestId: String(body.clientRequestId || '')
+      ,'Cliente Nombre': String(body.customerName || '')
+      ,'Cliente Teléfono': String(body.customerPhone || '')
+      ,'Garantía Días': Math.max(0, Math.floor(number_(body.warrantyDays)))
     });
 
     const detailHeaders = headerMap_(detailsSheet.getRange(
@@ -261,13 +300,23 @@ function createSale_(body) {
         idVenta: saleId,
         idArticulos: line.productId,
         Cantidad: line.quantity,
+        'Precio Original': line.originalPrice,
         'Precio Unitario': line.unitPrice,
+        Diferencia: line.difference,
         Total: line.total
       });
     });
     detailsSheet.getRange(
       detailsSheet.getLastRow() + 1, 1, detailRows.length, detailsSheet.getLastColumn()
     ).setValues(detailRows);
+
+    resolved.forEach(function(line) {
+      const type = String(productData[line.rowIndex][productHeaders['Tipo']] || '');
+      if (normalize_(type) === 'equipo' && productHeaders['Estado Equipo'] !== undefined) {
+        productsSheet.getRange(line.rowIndex + 1,
+          productHeaders['Estado Equipo'] + 1).setValue('Vendido');
+      }
+    });
 
     SpreadsheetApp.flush();
     return { ok: true, saleId: saleId, total: total };
@@ -277,6 +326,7 @@ function createSale_(body) {
 }
 
 function createProduct_(body) {
+  ensureProductColumns_();
   const product = body.product || {};
   if (!String(product.name || '').trim()) throw new Error('Falta el nombre');
   const lock = LockService.getScriptLock();
@@ -314,6 +364,7 @@ function prepareNewProductRow_(sheet, row) {
 }
 
 function updateProduct_(body) {
+  ensureProductColumns_();
   const product = body.product || {};
   const id = String(product.id || '');
   if (!id) throw new Error('Falta el artículo');
@@ -348,6 +399,24 @@ function writeProductFields_(sheet, headers, row, product, creating, id) {
     'Descripcion ': String(product.description || '').trim(),
     'Stock Minimo': Math.max(0, Math.floor(number_(product.minimumStock))),
     Codigo_Backup: String(product.backupCode || '').trim()
+    ,Marca: String(product.brand || '').trim()
+    ,'Modelos Compatibles': String(product.compatibleModels || '').trim()
+    ,Color: String(product.color || '').trim()
+    ,Proveedor: String(product.supplier || '').trim()
+    ,Calidad: String(product.quality || '').trim()
+    ,'Garantía Repuesto': String(product.warrantyInfo || '').trim()
+    ,IMEI: String(product.imei || '').trim()
+    ,Memoria: String(product.memory || '').trim()
+    ,'Condición': String(product.condition || '').trim()
+    ,'Batería': String(product.battery || '').trim()
+    ,Observaciones: String(product.observations || '').trim()
+    ,'Estado Equipo': String(product.equipmentStatus || 'Disponible').trim()
+    ,'Reserva Cliente': String(product.reservationCustomer || '').trim()
+    ,'Reserva Teléfono': String(product.reservationPhone || '').trim()
+    ,'Reserva Seña': number_(product.reservationDeposit)
+    ,'Reserva Fecha': String(product.reservationDate || '').trim()
+    ,'Reserva Vencimiento': String(product.reservationExpiry || '').trim()
+    ,Costo: number_(product.cost)
   };
   if (creating) {
     values['Stock Inicial'] = Math.max(0, Math.floor(number_(product.initialStock)));
@@ -361,6 +430,7 @@ function writeProductFields_(sheet, headers, row, product, creating, id) {
 }
 
 function uploadProductPhoto_(body) {
+  ensureProductColumns_();
   if (!body.productId || !body.base64 || !body.mimeType) {
     throw new Error('Faltan datos de la imagen');
   }
@@ -376,19 +446,24 @@ function uploadProductPhoto_(body) {
   const rowIndex = findRowByValue_(values, headers['idArticulos'], String(body.productId));
   if (rowIndex < 1) throw new Error('Artículo inexistente');
   const relativePath = 'Articulos_Images/' + fileName;
-  sheet.getRange(rowIndex + 1, headers['Foto'] + 1).setValue(relativePath);
+  const slot = Math.max(1, Math.min(3, Math.floor(Number(body.slot || 1))));
+  const photoHeader = slot === 1 ? 'Foto' : 'Foto_' + slot;
+  sheet.getRange(rowIndex + 1, headers[photoHeader] + 1).setValue(relativePath);
   SpreadsheetApp.flush();
   return { ok: true, path: relativePath };
 }
 
-function getProductPhoto_(productId) {
+function getProductPhoto_(productId, requestedSlot) {
+  ensureProductColumns_();
   if (!productId) throw new Error('Falta el artículo');
   const sheet = sheet_(CONFIG.sheets.products);
   const values = sheet.getDataRange().getValues();
   const headers = headerMap_(values[0]);
   const rowIndex = findRowByValue_(values, headers['idArticulos'], String(productId));
   if (rowIndex < 1) throw new Error('Artículo inexistente');
-  const path = String(values[rowIndex][headers['Foto']] || '');
+  const slot = Math.max(1, Math.min(3, Math.floor(Number(requestedSlot || 1))));
+  const photoHeader = slot === 1 ? 'Foto' : 'Foto_' + slot;
+  const path = String(values[rowIndex][headers[photoHeader]] || '');
   const fileName = path.split('/').pop();
   if (!fileName) throw new Error('El artículo no tiene foto');
   const files = DriveApp.getFolderById(CONFIG.photoFolderId).getFilesByName(fileName);
@@ -402,12 +477,24 @@ function getProductPhoto_(productId) {
 }
 
 function ensureColumns_() {
+  ensureProductColumns_();
   ensureHeaders_(sheet_(CONFIG.sheets.sales), [
     'idVenta', 'Fecha', 'Mes', 'idClientes', 'Vendedor', 'Total',
-    'Medios de pago', 'Pagos JSON', 'Estado', 'requestId'
+    'Medios de pago', 'Pagos JSON', 'Estado', 'requestId',
+    'Cliente Nombre', 'Cliente Teléfono', 'Garantía Días'
   ]);
   ensureHeaders_(sheet_(CONFIG.sheets.details), [
-    'idDetalle', 'idVenta', 'idArticulos', 'Cantidad', 'Precio Unitario', 'Total'
+    'idDetalle', 'idVenta', 'idArticulos', 'Cantidad', 'Precio Original',
+    'Precio Unitario', 'Diferencia', 'Total'
+  ]);
+}
+
+function ensureProductColumns_() {
+  ensureHeaders_(sheet_(CONFIG.sheets.products), [
+    'Tipo', 'Marca', 'Modelos Compatibles', 'Color', 'Proveedor', 'Calidad',
+    'Garantía Repuesto', 'IMEI', 'Memoria', 'Condición', 'Batería',
+    'Observaciones', 'Estado Equipo', 'Reserva Cliente', 'Reserva Teléfono',
+    'Reserva Seña', 'Reserva Fecha', 'Reserva Vencimiento', 'Costo', 'Foto_2', 'Foto_3'
   ]);
 }
 
