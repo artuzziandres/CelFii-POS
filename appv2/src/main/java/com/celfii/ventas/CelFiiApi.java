@@ -64,32 +64,50 @@ final class CelFiiApi {
                     result.add(new Product(row.optString("id"), row.optString("name"),
                             row.optString("category"), row.optDouble("cashPrice"),
                             row.optDouble("cardPrice"), row.optInt("stock"),
-                            row.optString("photo"), row.optString("photoUrl"), row.optString("code"),
-                            row.optString("backupCode"), row.optString("type", "Accesorio"),
-                            row.optString("description"), row.optInt("minimumStock")));
+                            row.optString("photo"), row.optString("photo2"), row.optString("photo3"),
+                            row.optString("photoUrl"), row.optString("code"), row.optString("backupCode"),
+                            row.optString("type", "Accesorio"), row.optString("description"),
+                            row.optInt("minimumStock"), row.optString("brand"),
+                            row.optString("compatibleModels"), row.optString("color"),
+                            row.optString("supplier"), row.optString("quality"),
+                            row.optString("warrantyInfo"), row.optString("imei"),
+                            row.optString("memory"), row.optString("condition"),
+                            row.optString("battery"), row.optString("observations"),
+                            row.optString("equipmentStatus", "Disponible"),
+                            row.optString("reservationCustomer"), row.optString("reservationPhone"),
+                            row.optDouble("reservationDeposit"), row.optString("reservationDate"),
+                            row.optString("reservationExpiry"), row.optDouble("cost")));
                 }
                 callback.success(result);
             } catch (Exception error) { callback.error(message(error)); }
         }, "celfii-products").start();
     }
 
-    void createSale(String requestId, String seller, String payment,
+    void createSale(String requestId, String seller, String payment, String customerName,
+                    String customerPhone, int warrantyDays,
                     Iterable<MainActivity.CartLine> cart, Callback<String> callback) {
         new Thread(() -> {
             try {
                 JSONArray lines = new JSONArray();
                 double total = 0;
+                double priorDeposit = 0;
                 for (MainActivity.CartLine line : cart) {
                     lines.put(new JSONObject().put("productId", line.product.id)
                             .put("quantity", line.quantity)
-                            .put("unitPrice", line.product.cashPrice));
+                            .put("originalPrice", line.product.cashPrice)
+                            .put("unitPrice", line.unitPrice));
                     total += line.total();
+                    if (line.product.isReserved()) priorDeposit += line.product.reservationDeposit;
                 }
+                JSONArray payments = new JSONArray();
+                if (priorDeposit > 0) payments.put(new JSONObject()
+                        .put("method", "Seña previa").put("amount", priorDeposit));
+                payments.put(new JSONObject().put("method", payment)
+                        .put("amount", Math.max(0, total - priorDeposit)).put("installments", 0));
                 JSONObject body = base("createSale").put("clientRequestId", requestId)
                         .put("seller", seller).put("lines", lines)
-                        .put("payments", new JSONArray().put(new JSONObject()
-                                .put("method", payment).put("amount", total)
-                                .put("installments", 0)));
+                        .put("customerName", customerName).put("customerPhone", customerPhone)
+                        .put("warrantyDays", warrantyDays).put("payments", payments);
                 JSONObject response = request("POST", BuildConfig.CELFII_API_URL, body);
                 callback.success(response.getString("saleId"));
             } catch (Exception error) { callback.error(message(error)); }
@@ -118,6 +136,11 @@ final class CelFiiApi {
                                 .append("\n").append(quantity).append(" × ")
                                 .append(amount(line.optDouble("unitPrice")))
                                 .append(" = ").append(amount(line.optDouble("total")));
+                        double original = line.optDouble("originalPrice", line.optDouble("unitPrice"));
+                        double difference = line.optDouble("difference");
+                        if (Math.abs(difference) > .01) details.append("\nOriginal: ")
+                                .append(amount(original)).append(" · Diferencia: ")
+                                .append(amount(difference));
                     }
                     result.add(new SaleStore.Entry(row.optString("id"),
                             row.optString("date"), row.optDouble("total"),
@@ -141,6 +164,19 @@ final class CelFiiApi {
                         .put("type", product.type).put("description", product.description)
                         .put("minimumStock", product.minimumStock)
                         .put("initialStock", initialStock);
+                value.put("brand", product.brand).put("compatibleModels", product.compatibleModels)
+                        .put("color", product.color).put("supplier", product.supplier)
+                        .put("quality", product.quality).put("warrantyInfo", product.warrantyInfo)
+                        .put("imei", product.imei).put("memory", product.memory)
+                        .put("condition", product.condition).put("battery", product.battery)
+                        .put("observations", product.observations)
+                        .put("equipmentStatus", product.equipmentStatus)
+                        .put("reservationCustomer", product.reservationCustomer)
+                        .put("reservationPhone", product.reservationPhone)
+                        .put("reservationDeposit", product.reservationDeposit)
+                        .put("reservationDate", product.reservationDate)
+                        .put("reservationExpiry", product.reservationExpiry)
+                        .put("cost", product.cost);
                 JSONObject response = request("POST", BuildConfig.CELFII_API_URL,
                         base(creating ? "createProduct" : "updateProduct").put("product", value));
                 callback.success(response.getString("productId"));
@@ -149,11 +185,16 @@ final class CelFiiApi {
     }
 
     void uploadPhoto(String productId, Bitmap bitmap, Callback<String> callback) {
+        uploadPhoto(productId, bitmap, 1, callback);
+    }
+
+    void uploadPhoto(String productId, Bitmap bitmap, int slot, Callback<String> callback) {
         new Thread(() -> {
             try {
                 ByteArrayOutputStream bytes = new ByteArrayOutputStream();
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 82, bytes);
                 JSONObject body = base("uploadProductPhoto").put("productId", productId)
+                        .put("slot", slot)
                         .put("mimeType", "image/jpeg")
                         .put("base64", Base64.encodeToString(bytes.toByteArray(), Base64.NO_WRAP));
                 JSONObject response = request("POST", BuildConfig.CELFII_API_URL, body);
@@ -163,10 +204,15 @@ final class CelFiiApi {
     }
 
     void productPhoto(String productId, Callback<Bitmap> callback) {
+        productPhoto(productId, 1, callback);
+    }
+
+    void productPhoto(String productId, int slot, Callback<Bitmap> callback) {
         new Thread(() -> {
             try {
                 JSONObject response = request("GET", BuildConfig.CELFII_API_URL
                         + "?action=productPhoto&productId=" + encoded(productId)
+                        + "&slot=" + slot
                         + "&token=" + encoded(token()), null);
                 byte[] bytes = Base64.decode(response.getString("base64"), Base64.DEFAULT);
                 Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
