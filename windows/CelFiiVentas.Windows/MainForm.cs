@@ -17,6 +17,8 @@ public sealed class MainForm : Form
     private readonly TreeView _history = new() { Dock = DockStyle.Fill, BackColor = Ink, ForeColor = Color.White, Font = new("Segoe UI", 11), BorderStyle = BorderStyle.None };
     private readonly ComboBox _seller = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly ComboBox _payment = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly ComboBox _saleType = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly ComboBox _productType = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly Label _total = new() { AutoSize = true, ForeColor = Lime, Font = new("Segoe UI", 24, FontStyle.Bold), Text = "$ 0" };
     private readonly Label _status = new() { AutoSize = true, ForeColor = Color.Silver, Text = "Sin sincronizar" };
     private List<Product> _allProducts = [];
@@ -59,13 +61,16 @@ public sealed class MainForm : Form
         var tab = NewTab("VENTA");
         var split = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 690, BackColor = Ink };
         tab.Controls.Add(split);
-        var left = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, Padding = new Padding(18), BackColor = Ink };
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 58)); left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var left = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, Padding = new Padding(18), BackColor = Ink };
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 48)); left.RowStyles.Add(new RowStyle(SizeType.Absolute, 58)); left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _saleType.Items.AddRange(["Todos", "Accesorios", "Repuestos", "Equipos"]); _saleType.SelectedIndex = 0;
+        _saleType.Dock = DockStyle.Fill; _saleType.SelectedIndexChanged += (_, _) => FilterProducts();
         _search.Dock = DockStyle.Fill; StyleInput(_search); _search.TextChanged += (_, _) => FilterProducts();
         _search.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { AddExactCode(); e.SuppressKeyPress = true; } };
-        left.Controls.Add(_search, 0, 0); left.Controls.Add(_products, 0, 1);
+        left.Controls.Add(_saleType, 0, 0); left.Controls.Add(_search, 0, 1); left.Controls.Add(_products, 0, 2);
         split.Panel1.Controls.Add(left);
         _products.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) AddProduct((Product)_products.Rows[e.RowIndex].Tag); };
+        _cart.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) ChangePrice(e.RowIndex); };
 
         var right = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 7, Padding = new Padding(18), BackColor = PanelColor };
         right.RowStyles.Add(new RowStyle(SizeType.Absolute, 48)); right.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -88,7 +93,10 @@ public sealed class MainForm : Form
         var tab = NewTab("PRODUCTOS");
         var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(18), BackColor = Ink };
         var bar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 62 };
-        bar.Controls.Add(ActionButton("NUEVO PRODUCTO", (_, _) => EditProduct(null)));
+        _productType.Items.AddRange(["Todos", "Accesorios", "Repuestos", "Equipos"]); _productType.SelectedIndex = 0;
+        _productType.Width = 170; _productType.SelectedIndexChanged += (_, _) => FillProductAdmin();
+        bar.Controls.Add(_productType);
+        bar.Controls.Add(ActionButton("NUEVO PRODUCTO", (_, _) => ChooseProductType()));
         bar.Controls.Add(ActionButton("EDITAR SELECCIONADO", (_, _) => { if (_productAdmin.CurrentRow?.Tag is Product p) EditProduct(p); }));
         bar.Controls.Add(ActionButton("ACTUALIZAR", async (_, _) => await ReloadProductsAsync()));
         panel.Controls.Add(_productAdmin); panel.Controls.Add(bar); tab.Controls.Add(panel);
@@ -126,19 +134,26 @@ public sealed class MainForm : Form
 
     private void FilterProducts()
     {
-        var q = _search.Text.Trim(); var list = string.IsNullOrEmpty(q) ? _allProducts : _allProducts.Where(p => (p.Name + " " + p.Category + " " + p.Code + " " + p.BackupCode).Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+        var q = _search.Text.Trim(); var list = _allProducts.Where(p => !p.IsSold && MatchesType(p, _saleType.Text));
+        if (!string.IsNullOrEmpty(q)) list = list.Where(p => (p.Name + " " + p.Category + " " + p.Code + " " + p.BackupCode + " " + p.Imei + " " + p.Memory).Contains(q, StringComparison.OrdinalIgnoreCase));
         FillProductsGrid(_products, list);
     }
-    private void FillProductAdmin() => FillProductsGrid(_productAdmin, _allProducts);
+    private void FillProductAdmin() => FillProductsGrid(_productAdmin,
+        _allProducts.Where(p => !p.IsSold && MatchesType(p, _productType.Text)));
+    private static bool MatchesType(Product p, string selected) => selected == "Todos"
+        || selected == "Accesorios" && (string.IsNullOrWhiteSpace(p.Type) || p.Type.StartsWith("Accesorio", StringComparison.OrdinalIgnoreCase))
+        || selected == "Repuestos" && p.Type.StartsWith("Repuesto", StringComparison.OrdinalIgnoreCase)
+        || selected == "Equipos" && p.Type.StartsWith("Equipo", StringComparison.OrdinalIgnoreCase);
     private static void FillProductsGrid(DataGridView grid, IEnumerable<Product> products)
     {
-        grid.Rows.Clear(); grid.Columns.Clear(); grid.Columns.Add("name", "Producto"); grid.Columns.Add("category", "Categoría"); grid.Columns.Add("code", "Código"); grid.Columns.Add("price", "Efectivo"); grid.Columns.Add("card", "Posnet"); grid.Columns.Add("stock", "Stock");
+        grid.Rows.Clear(); grid.Columns.Clear(); grid.Columns.Add("name", "Producto"); grid.Columns.Add("type", "Tipo"); grid.Columns.Add("details", "Memoria / Color / IMEI"); grid.Columns.Add("price", "Precio"); grid.Columns.Add("status", "Estado / Stock");
         grid.Columns[0].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
-        foreach (var p in products) { var i = grid.Rows.Add(p.Name, p.Category, p.Code, p.CashPrice.ToString("C0"), p.CardPrice.ToString("C0"), p.Stock); grid.Rows[i].Tag = p; }
+        foreach (var p in products) { var detail = p.IsEquipment ? $"{p.Memory} · {p.Color} · {p.Imei}" : $"{p.Category} · {p.Code}"; var status = p.IsEquipment ? p.EquipmentStatus : $"Stock {p.Stock}"; var i = grid.Rows.Add(p.Name, string.IsNullOrWhiteSpace(p.Type) ? "Accesorio" : p.Type, detail, p.CashPrice.ToString("C0"), status); grid.Rows[i].Tag = p; }
     }
     private void AddExactCode() { var p = _allProducts.FirstOrDefault(x => x.Code.Equals(_search.Text.Trim(), StringComparison.OrdinalIgnoreCase) || x.BackupCode.Equals(_search.Text.Trim(), StringComparison.OrdinalIgnoreCase)); if (p != null) { AddProduct(p); _search.Clear(); } }
-    private void AddProduct(Product product) { var line = _cartLines.FirstOrDefault(x => x.Product.Id == product.Id); if (line == null) _cartLines.Add(new CartLine { Product = product, Quantity = 1, UnitPrice = _payment.Text == "Posnet" && product.CardPrice > 0 ? product.CardPrice : product.CashPrice }); else if (line.Quantity < product.Stock) line.Quantity++; RefreshCart(); }
+    private void AddProduct(Product product) { if (product.IsEquipment && string.IsNullOrWhiteSpace(product.Imei)) { MessageBox.Show("Completá el IMEI antes de vender el equipo."); return; } var line = _cartLines.FirstOrDefault(x => x.Product.Id == product.Id); if (line == null) _cartLines.Add(new CartLine { Product = product, Quantity = 1, UnitPrice = product.CashPrice }); else if (!product.IsEquipment && line.Quantity < product.Stock) line.Quantity++; RefreshCart(); }
     private void RefreshCart() { _cart.Rows.Clear(); _cart.Columns.Clear(); _cart.Columns.Add("product", "Producto"); _cart.Columns.Add("qty", "Cant."); _cart.Columns.Add("price", "Precio"); _cart.Columns.Add("total", "Total"); _cart.Columns[0].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; foreach (var x in _cartLines) _cart.Rows.Add(x.Product.Name, x.Quantity, x.UnitPrice.ToString("C0"), x.Total.ToString("C0")); _total.Text = _cartLines.Sum(x => x.Total).ToString("C0"); }
+    private void ChangePrice(int row) { var line = _cartLines[row]; var value = Microsoft.VisualBasic.Interaction.InputBox("Precio final", line.Product.Name, line.UnitPrice.ToString("0.##")); if (decimal.TryParse(value, out var price) && price > 0) { line.UnitPrice = price; RefreshCart(); } }
 
     private async Task FinishSaleAsync(bool print)
     {
@@ -146,12 +161,28 @@ public sealed class MainForm : Form
         await RunBusy(async () => { var id = await _api.CreateSaleAsync(_cartLines, _seller.Text, _payment.Text); if (print) RawPrinter.Print(_settings.PrinterName, RawPrinter.Ticket(id, _seller.Text, _payment.Text, _cartLines)); MessageBox.Show(print ? "Venta guardada e impresa." : "Venta guardada.", "Cel-Fii"); _cartLines.Clear(); RefreshCart(); await ReloadAllAsync(); });
     }
 
-    private void EditProduct(Product? original)
+    private void ChooseProductType()
     {
-        var creating = original is null; var p = original is null ? new Product() : new Product { Id = original.Id, Name = original.Name, Category = original.Category, CashPrice = original.CashPrice, CardPrice = original.CardPrice, Stock = original.Stock, Code = original.Code, BackupCode = original.BackupCode, Photo = original.Photo, Description = original.Description, Type = original.Type, MinimumStock = original.MinimumStock, CostUsd = original.CostUsd };
-        using var dialog = new ProductDialog(p, creating);
-        if (dialog.ShowDialog(this) == DialogResult.OK) _ = RunBusy(async () => { await _api.SaveProductAsync(dialog.Product, creating); await ReloadProductsAsync(); });
+        using var choice = new Form { Text = "Nuevo producto", Width = 360, Height = 190, StartPosition = FormStartPosition.CenterParent, BackColor = Ink };
+        var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16) };
+        foreach (var type in new[] { "Accesorio", "Repuesto", "Equipo" })
+            panel.Controls.Add(ActionButton(type.ToUpperInvariant(), (_, _) => { choice.Tag = type; choice.DialogResult = DialogResult.OK; }));
+        choice.Controls.Add(panel);
+        if (choice.ShowDialog(this) == DialogResult.OK) EditProduct(null, (string)choice.Tag!);
     }
+
+    private void EditProduct(Product? original, string? forcedType = null)
+    {
+        var creating = original is null; var p = original is null ? new Product { Type = forcedType ?? "Accesorio", Stock = forcedType == "Equipo" ? 1 : 0 } : CloneProduct(original);
+        using var dialog = new ProductDialog(p, creating);
+        if (dialog.ShowDialog(this) == DialogResult.OK) _ = RunBusy(async () => {
+            var id = await _api.SaveProductAndReturnIdAsync(dialog.Product, creating);
+            for (var i = 0; i < dialog.PhotoPaths.Length; i++)
+                if (!string.IsNullOrWhiteSpace(dialog.PhotoPaths[i])) await _api.UploadPhotoAsync(id, dialog.PhotoPaths[i], i + 1);
+            await ReloadProductsAsync();
+        });
+    }
+    private static Product CloneProduct(Product p) => new() { Id=p.Id, Name=p.Name, Category=p.Category, CashPrice=p.CashPrice, CardPrice=p.CardPrice, Stock=p.Stock, Code=p.Code, BackupCode=p.BackupCode, Photo=p.Photo, Photo2=p.Photo2, Photo3=p.Photo3, Description=p.Description, Type=p.Type, MinimumStock=p.MinimumStock, CostUsd=p.CostUsd, Cost=p.Cost, Brand=p.Brand, CompatibleModels=p.CompatibleModels, Color=p.Color, Supplier=p.Supplier, Quality=p.Quality, WarrantyInfo=p.WarrantyInfo, Imei=p.Imei, Memory=p.Memory, Condition=p.Condition, Battery=p.Battery, Observations=p.Observations, EquipmentStatus=p.EquipmentStatus, ReservationCustomer=p.ReservationCustomer, ReservationPhone=p.ReservationPhone, ReservationDeposit=p.ReservationDeposit, ReservationDate=p.ReservationDate, ReservationExpiry=p.ReservationExpiry };
     private void ShowSale(Sale s) { var details = string.Join(Environment.NewLine, s.Details.Select(x => $"{x.Quantity} x {x.Name}  {x.Total:C0}")); MessageBox.Show($"Venta {s.Id}\n{s.Date}\nVendedor: {s.Seller}\nPago: {s.Payment}\n\n{details}\n\nTOTAL: {s.Total:C0}", "Detalle de venta"); }
     private async Task RunBusy(Func<Task> action) { try { UseWaitCursor = true; Enabled = false; await action(); } catch (Exception ex) { MessageBox.Show(ex.Message, "Cel-Fii Ventas", MessageBoxButtons.OK, MessageBoxIcon.Error); } finally { Enabled = true; UseWaitCursor = false; } }
 
@@ -165,18 +196,50 @@ public sealed class MainForm : Form
 internal sealed class ProductDialog : Form
 {
     public Product Product { get; }
+    public string[] PhotoPaths { get; } = new string[3];
     public ProductDialog(Product product, bool creating)
     {
         Product = product; Text = creating ? "Nuevo producto" : "Editar producto"; Width = 570; Height = 650; StartPosition = FormStartPosition.CenterParent; BackColor = Color.FromArgb(18, 22, 18); ForeColor = Color.White;
-        var fields = new (string Label, Func<string> Get, Action<string> Set)[] {
-            ("Nombre", () => product.Name, v => product.Name = v), ("Categoría", () => product.Category, v => product.Category = v),
-            ("Precio efectivo", () => product.CashPrice.ToString(), v => product.CashPrice = Decimal(v)), ("Precio Posnet", () => product.CardPrice.ToString(), v => product.CardPrice = Decimal(v)),
-            ("Stock inicial / actual", () => product.Stock.ToString(), v => product.Stock = Integer(v)), ("Código de barras", () => product.Code, v => product.Code = v),
-            ("Código alternativo", () => product.BackupCode, v => product.BackupCode = v), ("Foto (URL de Drive)", () => product.Photo, v => product.Photo = v),
-            ("Descripción", () => product.Description, v => product.Description = v)
+        var equipment = product.Type == "Equipo";
+        var fields = new List<(string Label, Func<string> Get, Action<string> Set)> {
+            (equipment ? "Modelo *" : "Nombre *", () => product.Name, v => product.Name = v),
+            ("Precio efectivo/transferencia *", () => product.CashPrice.ToString(), v => product.CashPrice = Decimal(v)),
+            ("Marca", () => product.Brand, v => product.Brand = v), ("Color", () => product.Color, v => product.Color = v),
+            ("Costo", () => product.Cost.ToString(), v => product.Cost = Decimal(v))
         };
+        if (equipment) fields.AddRange([
+            ("Memoria", () => product.Memory, v => product.Memory = v), ("IMEI", () => product.Imei, v => product.Imei = v),
+            ("Condición: Nuevo o Usado", () => product.Condition, v => product.Condition = v),
+            ("Estado de batería", () => product.Battery, v => product.Battery = v),
+            ("Observaciones", () => product.Observations, v => product.Observations = v),
+            ("Estado: Disponible o Reservado", () => product.EquipmentStatus, v => product.EquipmentStatus = v),
+            ("Cliente de reserva", () => product.ReservationCustomer, v => product.ReservationCustomer = v),
+            ("Teléfono de reserva", () => product.ReservationPhone, v => product.ReservationPhone = v),
+            ("Seña", () => product.ReservationDeposit.ToString(), v => product.ReservationDeposit = Decimal(v)),
+            ("Vencimiento dd/MM/yyyy", () => product.ReservationExpiry, v => product.ReservationExpiry = v),
+            ("Foto 1 (ruta Drive)", () => product.Photo, v => product.Photo = v), ("Foto 2 (ruta Drive)", () => product.Photo2, v => product.Photo2 = v),
+            ("Foto 3 (ruta Drive)", () => product.Photo3, v => product.Photo3 = v)
+        ]); else fields.AddRange([
+            ("Categoría", () => product.Category, v => product.Category = v),
+            ("Stock inicial / actual *", () => product.Stock.ToString(), v => product.Stock = Integer(v)),
+            ("Modelos compatibles", () => product.CompatibleModels, v => product.CompatibleModels = v),
+            ("Proveedor", () => product.Supplier, v => product.Supplier = v),
+            ("Calidad", () => product.Quality, v => product.Quality = v),
+            ("Garantía", () => product.WarrantyInfo, v => product.WarrantyInfo = v),
+            ("Código de barras", () => product.Code, v => product.Code = v),
+            ("Código alternativo", () => product.BackupCode, v => product.BackupCode = v),
+            ("Foto (ruta Drive)", () => product.Photo, v => product.Photo = v)
+        ]);
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), RowCount = fields.Length * 2 + 1, AutoScroll = true };
         foreach (var f in fields) { layout.Controls.Add(new Label { Text = f.Label, AutoSize = true, ForeColor = Color.FromArgb(157,255,0), Padding = new Padding(0,6,0,2) }); var input = new TextBox { Text = f.Get(), Dock = DockStyle.Top, BackColor = Color.FromArgb(30,34,30), ForeColor = Color.White, Font = new("Segoe UI", 11) }; input.TextChanged += (_, _) => f.Set(input.Text); layout.Controls.Add(input); }
+        var photoCount = equipment ? 3 : 1;
+        for (var slot = 0; slot < photoCount; slot++) {
+            var selectedSlot = slot;
+            var photo = new Button { Text = $"ELEGIR FOTO {slot + 1}", Height = 42, Dock = DockStyle.Top,
+                BackColor = Color.FromArgb(50,55,50), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+            photo.Click += (_, _) => { using var picker = new OpenFileDialog { Filter = "Imágenes|*.jpg;*.jpeg;*.png" }; if (picker.ShowDialog(this) == DialogResult.OK) { PhotoPaths[selectedSlot] = picker.FileName; photo.Text = $"FOTO {selectedSlot + 1}: {Path.GetFileName(picker.FileName)}"; } };
+            layout.Controls.Add(photo);
+        }
         var save = new Button { Text = "GUARDAR", DialogResult = DialogResult.OK, Height = 46, Dock = DockStyle.Top, BackColor = Color.FromArgb(157,255,0), FlatStyle = FlatStyle.Flat, Font = new("Segoe UI", 10, FontStyle.Bold) }; layout.Controls.Add(save); Controls.Add(layout); AcceptButton = save;
     }
     private static decimal Decimal(string value) => decimal.TryParse(value, out var n) ? n : 0;
