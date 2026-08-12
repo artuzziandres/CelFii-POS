@@ -2,6 +2,9 @@
 
 Aplicación nativa para Windows 11 x64 conectada al mismo Google Sheets de Cel-Fii Ventas.
 
+La interfaz 1.1.1 está optimizada para pantallas de escritorio: navegación amplia,
+panel de ticket fijo, columnas sin desplazamiento horizontal y acciones visibles.
+
 ## Impresora Global TP-POS58 por USB
 
 1. Instalar en Windows el controlador de la impresora.
