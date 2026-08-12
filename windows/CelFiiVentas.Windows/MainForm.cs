@@ -23,6 +23,8 @@ public sealed class MainForm : Form
     private readonly ComboBox _productType = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly Label _total = new() { AutoSize = true, ForeColor = Lime, Font = new("Segoe UI", 24, FontStyle.Bold), Text = "$ 0" };
     private readonly Label _status = new() { AutoSize = true, ForeColor = Color.Silver, Text = "Sin sincronizar" };
+    private readonly System.Windows.Forms.Timer _searchDelay = new() { Interval = 220 };
+    private bool _historyLoaded;
     private List<Product> _allProducts = [];
     private readonly List<CartLine> _cartLines = [];
 
@@ -42,7 +44,11 @@ public sealed class MainForm : Form
         BuildProductsTab();
         BuildHistoryTab();
         BuildMoreTab();
-        Shown += async (_, _) => await ReloadAllAsync();
+        _searchDelay.Tick += (_, _) => { _searchDelay.Stop(); FilterProducts(); };
+        _tabs.SelectedIndexChanged += async (_, _) => {
+            if (_tabs.SelectedTab?.Text == "HISTORIAL" && !_historyLoaded) await ReloadHistoryAsync();
+        };
+        Shown += async (_, _) => await ReloadProductsAsync();
     }
 
     private void DrawTab(object? sender, DrawItemEventArgs e)
@@ -79,13 +85,25 @@ public sealed class MainForm : Form
         split.Resize += (_, _) => { if (split.ClientSize.Width > 1050)
             split.SplitterDistance = Math.Max(600, split.ClientSize.Width - 450); };
         tab.Controls.Add(split);
-        var left = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, Padding = new Padding(18), BackColor = Ink };
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 48)); left.RowStyles.Add(new RowStyle(SizeType.Absolute, 58)); left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var left = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4,
+            Padding = new Padding(24, 20, 20, 20), BackColor = Ink };
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         _saleType.Items.AddRange(["Todos", "Accesorios", "Repuestos", "Equipos"]); _saleType.SelectedIndex = 0;
-        _saleType.Dock = DockStyle.Fill; _saleType.SelectedIndexChanged += (_, _) => FilterProducts();
-        _search.Dock = DockStyle.Fill; StyleInput(_search); _search.TextChanged += (_, _) => FilterProducts();
+        _saleType.Dock = DockStyle.Fill; _saleType.Font = new Font("Segoe UI", 11, FontStyle.Bold);
+        _saleType.BackColor = Color.FromArgb(31, 38, 31); _saleType.ForeColor = Color.White;
+        _saleType.SelectedIndexChanged += (_, _) => FilterProducts();
+        _search.Dock = DockStyle.Fill; StyleInput(_search); _search.TextChanged += (_, _) => {
+            _searchDelay.Stop(); _searchDelay.Start();
+        };
         _search.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { AddExactCode(); e.SuppressKeyPress = true; } };
-        left.Controls.Add(_saleType, 0, 0); left.Controls.Add(_search, 0, 1); left.Controls.Add(_products, 0, 2);
+        left.Controls.Add(_saleType, 0, 0);
+        left.Controls.Add(new Label { Text = "DOBLE CLIC EN UN PRODUCTO PARA AGREGARLO AL TICKET",
+            ForeColor = Lime, Font = new("Segoe UI", 10, FontStyle.Bold), AutoSize = true,
+            Padding = new Padding(0, 8, 0, 0) }, 0, 1);
+        left.Controls.Add(_search, 0, 2); left.Controls.Add(_products, 0, 3);
         split.Panel1.Controls.Add(left);
         _products.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) AddProduct((Product)_products.Rows[e.RowIndex].Tag); };
         _cart.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) ChangePrice(e.RowIndex); };
@@ -119,14 +137,16 @@ public sealed class MainForm : Form
     private void BuildProductsTab()
     {
         var tab = NewTab("PRODUCTOS");
-        var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(18), BackColor = Ink };
-        var bar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 62 };
+        var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(24, 18, 24, 22), BackColor = Ink };
+        var bar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 72, Padding = new Padding(0, 7, 0, 7) };
         _productType.Items.AddRange(["Todos", "Accesorios", "Repuestos", "Equipos"]); _productType.SelectedIndex = 0;
         _productType.Width = 170; _productType.SelectedIndexChanged += (_, _) => FillProductAdmin();
         bar.Controls.Add(_productType);
         bar.Controls.Add(ActionButton("NUEVO PRODUCTO", (_, _) => ChooseProductType()));
         bar.Controls.Add(ActionButton("EDITAR SELECCIONADO", (_, _) => { if (_productAdmin.CurrentRow?.Tag is Product p) EditProduct(p); }));
         bar.Controls.Add(ActionButton("ACTUALIZAR", async (_, _) => await ReloadProductsAsync()));
+        bar.Controls.Add(new Label { Text = "Doble clic para editar", ForeColor = Color.Silver,
+            AutoSize = true, Padding = new Padding(14, 14, 0, 0), Font = new("Segoe UI", 10, FontStyle.Italic) });
         panel.Controls.Add(_productAdmin); panel.Controls.Add(bar); tab.Controls.Add(panel);
         _productAdmin.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) EditProduct((Product)_productAdmin.Rows[e.RowIndex].Tag); };
     }
@@ -158,7 +178,7 @@ public sealed class MainForm : Form
 
     private async Task ReloadAllAsync() { await ReloadProductsAsync(); await ReloadHistoryAsync(); }
     private async Task ReloadProductsAsync() => await RunBusy(async () => { _allProducts = await _api.GetProductsAsync(); FilterProducts(); FillProductAdmin(); _status.Text = $"● {_allProducts.Count} PRODUCTOS"; });
-    private async Task ReloadHistoryAsync() => await RunBusy(async () => { var sales = await _api.GetSalesAsync(); _history.Nodes.Clear(); foreach (var group in sales.GroupBy(s => s.Month).OrderByDescending(g => g.Key)) { var month = _history.Nodes.Add(group.Key); foreach (var s in group) { var node = month.Nodes.Add($"{s.Date} · {s.Seller} · {s.Total:C0} · {s.Payment}"); node.Tag = s; } } if (_history.Nodes.Count > 0) _history.Nodes[0].Expand(); });
+    private async Task ReloadHistoryAsync() => await RunBusy(async () => { var sales = await _api.GetSalesAsync(); _history.Nodes.Clear(); foreach (var group in sales.GroupBy(s => s.Month).OrderByDescending(g => g.Key)) { var month = _history.Nodes.Add(group.Key); foreach (var s in group) { var node = month.Nodes.Add($"{s.Date} · {s.Seller} · {s.Total:C0} · {s.Payment}"); node.Tag = s; } } if (_history.Nodes.Count > 0) _history.Nodes[0].Expand(); _historyLoaded = true; });
 
     private void FilterProducts()
     {
@@ -216,10 +236,32 @@ public sealed class MainForm : Form
 
     private TabPage NewTab(string text) { var tab = new TabPage(text) { BackColor = Ink,
         ForeColor = Color.White, Padding = new Padding(0) }; _tabs.TabPages.Add(tab); return tab; }
-    private static DataGridView Grid() => new() { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false, SelectionMode = DataGridViewSelectionMode.FullRowSelect, MultiSelect = false, BackgroundColor = Ink, GridColor = Color.FromArgb(45, 50, 45), ForeColor = Color.White, RowHeadersVisible = false, AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells, BorderStyle = BorderStyle.None, DefaultCellStyle = new DataGridViewCellStyle { BackColor = PanelColor, ForeColor = Color.White, SelectionBackColor = Color.FromArgb(65, 90, 35), SelectionForeColor = Color.White, Padding = new Padding(6) }, ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle { BackColor = Color.Black, ForeColor = Lime, Font = new Font("Segoe UI", 10, FontStyle.Bold) }, EnableHeadersVisualStyles = false };
-    private static Button ActionButton(string text, EventHandler action) { var b = new Button { Text = text, AutoSize = true, Height = 46, BackColor = Lime, ForeColor = Color.Black, FlatStyle = FlatStyle.Flat, Font = new("Segoe UI", 10, FontStyle.Bold), Margin = new Padding(6) }; b.FlatAppearance.BorderSize = 0; b.Click += action; return b; }
+    private static DataGridView Grid() => new SmoothGrid { Dock = DockStyle.Fill, ReadOnly = true,
+        AllowUserToAddRows = false, AllowUserToDeleteRows = false,
+        SelectionMode = DataGridViewSelectionMode.FullRowSelect, MultiSelect = false,
+        BackgroundColor = Ink, GridColor = Color.FromArgb(48, 58, 48), ForeColor = Color.White,
+        RowHeadersVisible = false, RowTemplate = { Height = 43 }, BorderStyle = BorderStyle.None,
+        DefaultCellStyle = new DataGridViewCellStyle { BackColor = PanelColor,
+            AlternatingBackColor = Color.FromArgb(16, 21, 17), ForeColor = Color.White,
+            SelectionBackColor = Color.FromArgb(72, 105, 34), SelectionForeColor = Color.White,
+            Padding = new Padding(9, 5, 9, 5), Font = new Font("Segoe UI", 10.5f) },
+        ColumnHeadersHeight = 44, ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+        ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle { BackColor = Color.FromArgb(30, 45, 22),
+            ForeColor = Lime, Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
+            Padding = new Padding(8) }, EnableHeadersVisualStyles = false };
+    private static Button ActionButton(string text, EventHandler action) { var b = new Button {
+        Text = text, AutoSize = true, MinimumSize = new Size(112, 46), Height = 46,
+        BackColor = Lime, ForeColor = Color.Black, FlatStyle = FlatStyle.Flat,
+        Cursor = Cursors.Hand, Font = new("Segoe UI", 10, FontStyle.Bold), Margin = new Padding(6) };
+        b.FlatAppearance.BorderSize = 0; b.FlatAppearance.MouseOverBackColor = Color.FromArgb(190, 255, 65);
+        b.FlatAppearance.MouseDownBackColor = Color.FromArgb(125, 210, 0); b.Click += action; return b; }
     private static Label LabelFor(string text) => new() { Text = text, ForeColor = Color.White, Font = new("Segoe UI", 11, FontStyle.Bold), AutoSize = true, Padding = new Padding(0, 10, 0, 0) };
     private static void StyleInput(TextBox text) { text.BackColor = PanelColor; text.ForeColor = Color.White; text.BorderStyle = BorderStyle.FixedSingle; text.Font = new("Segoe UI", 13); }
+}
+
+internal sealed class SmoothGrid : DataGridView
+{
+    public SmoothGrid() { DoubleBuffered = true; SetStyle(ControlStyles.OptimizedDoubleBuffer, true); }
 }
 
 internal sealed class ProductDialog : Form
