@@ -5,8 +5,9 @@ namespace CelFiiVentas.Windows;
 public sealed class MainForm : Form
 {
     private static readonly Color Lime = Color.FromArgb(157, 255, 0);
-    private static readonly Color Ink = Color.FromArgb(7, 10, 8);
-    private static readonly Color PanelColor = Color.FromArgb(22, 26, 22);
+    private static readonly Color Ink = Color.FromArgb(8, 10, 9);
+    private static readonly Color PanelColor = Color.FromArgb(23, 27, 24);
+    private static readonly Color SoftPanel = Color.FromArgb(34, 40, 35);
     private readonly AppSettings _settings = SettingsStore.Load();
     private readonly CelFiiApi _api;
     private readonly TabControl _tabs = new() { Dock = DockStyle.Fill, Appearance = TabAppearance.FlatButtons,
@@ -55,13 +56,13 @@ public sealed class MainForm : Form
 
     private Control BuildNavigation()
     {
-        var nav = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 58, BackColor = Color.FromArgb(15, 19, 16),
-            Padding = new Padding(22, 6, 22, 6), WrapContents = false };
+        var nav = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 64, BackColor = Color.FromArgb(17, 21, 18),
+            Padding = new Padding(28, 10, 28, 10), WrapContents = false };
         var labels = new[] { "VENTA", "PRODUCTOS", "HISTORIAL", "CONFIGURACIÓN" };
         for (var i = 0; i < labels.Length; i++) {
             var index = i;
-            var button = new Button { Text = labels[i], Width = i == 3 ? 190 : 155, Height = 44,
-                FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
+            var button = new Button { Text = labels[i], Width = i == 3 ? 200 : 160, Height = 44,
+                FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 10, FontStyle.Bold),
                 Cursor = Cursors.Hand, Margin = new Padding(0, 0, 8, 0) };
             button.FlatAppearance.BorderSize = 0; button.Click += (_, _) => _tabs.SelectedIndex = index;
             _navButtons.Add(button); nav.Controls.Add(button);
@@ -73,28 +74,21 @@ public sealed class MainForm : Form
     {
         for (var i = 0; i < _navButtons.Count; i++) {
             var active = i == _tabs.SelectedIndex;
-            _navButtons[i].BackColor = active ? Lime : Color.FromArgb(28, 34, 29);
+            _navButtons[i].BackColor = active ? Lime : Color.FromArgb(31, 37, 32);
             _navButtons[i].ForeColor = active ? Color.Black : Color.White;
         }
     }
 
     private Control BuildHeader()
     {
-        var header = new TableLayoutPanel { Dock = DockStyle.Top, Height = 104, BackColor = Color.Black,
-            Padding = new Padding(22, 8, 22, 8), ColumnCount = 4, RowCount = 1 };
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88));
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 320));
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        var brand = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1, Margin = new Padding(12, 4, 0, 0) };
-        brand.RowStyles.Add(new RowStyle(SizeType.Absolute, 54)); brand.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        brand.Controls.Add(new Label { Text = "CEL-FII", ForeColor = Lime, Font = new("Segoe UI", 27, FontStyle.Bold), AutoSize = true }, 0, 0);
-        brand.Controls.Add(new Label { Text = "VENTAS · ESCRITORIO", ForeColor = Color.Silver, Font = new("Segoe UI", 10.5f, FontStyle.Bold), AutoSize = true }, 0, 1);
+        var header = new Panel { Dock = DockStyle.Top, Height = 112, BackColor = Color.FromArgb(12, 14, 16) };
         var logoPath = Path.Combine(AppContext.BaseDirectory, "logo_celfii_app.png");
-        if (File.Exists(logoPath)) header.Controls.Add(new PictureBox { Image = Image.FromFile(logoPath), SizeMode = PictureBoxSizeMode.Zoom, Dock = DockStyle.Fill, Margin = new Padding(0) }, 0, 0);
-        header.Controls.Add(brand, 1, 0);
-        _status.Dock = DockStyle.Fill; _status.TextAlign = ContentAlignment.MiddleRight; _status.Font = new Font("Segoe UI", 10.5f);
-        header.Controls.Add(_status, 3, 0);
+        if (File.Exists(logoPath)) header.Controls.Add(new PictureBox { Image = Image.FromFile(logoPath), SizeMode = PictureBoxSizeMode.Zoom, Bounds = new Rectangle(24, 14, 82, 82) });
+        header.Controls.Add(new Label { Text = "CEL-FII", ForeColor = Lime, Font = new("Segoe UI", 26, FontStyle.Bold), AutoSize = true, Location = new Point(122, 18) });
+        header.Controls.Add(new Label { Text = "VENTAS PARA WINDOWS", ForeColor = Color.FromArgb(185, 190, 195), Font = new("Segoe UI", 10, FontStyle.Bold), AutoSize = true, Location = new Point(126, 70) });
+        _status.AutoSize = false; _status.Size = new Size(420, 40); _status.TextAlign = ContentAlignment.MiddleRight;
+        _status.Font = new Font("Segoe UI", 10); _status.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        header.Controls.Add(_status); header.Resize += (_, _) => _status.Location = new Point(header.ClientSize.Width - 448, 34);
         return header;
     }
 
@@ -130,27 +124,24 @@ public sealed class MainForm : Form
         _products.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) AddProduct((Product)_products.Rows[e.RowIndex].Tag); };
         _cart.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) ChangePrice(e.RowIndex); };
 
-        var right = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 7,
+        var right = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 8,
             Padding = new Padding(22, 18, 22, 18), BackColor = PanelColor };
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 48)); right.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 48)); right.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); right.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); right.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); right.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 38)); right.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 38)); right.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 62)); right.RowStyles.Add(new RowStyle(SizeType.Absolute, 126));
         right.Controls.Add(new Label { Text = "TICKET", ForeColor = Lime, Font = new("Segoe UI", 18, FontStyle.Bold), AutoSize = true }, 0, 0);
         right.Controls.Add(_cart, 0, 1); right.Controls.Add(LabelFor("Vendedor"), 0, 2); right.Controls.Add(_seller, 0, 3);
         right.Controls.Add(LabelFor("Forma de pago"), 0, 4); right.Controls.Add(_payment, 0, 5);
-        var actions = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 2,
+        right.Controls.Add(_total, 0, 6); _total.Dock = DockStyle.Fill; _total.TextAlign = ContentAlignment.MiddleLeft;
+        var actions = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1,
             Padding = new Padding(0, 8, 0, 0) };
-        actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-        actions.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 43));
-        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 57));
+        actions.RowStyles.Add(new RowStyle(SizeType.Percent, 50)); actions.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         var print = ActionButton("GUARDAR E IMPRIMIR", async (_, _) => await FinishSaleAsync(true));
         var save = ActionButton("SOLO GUARDAR", async (_, _) => await FinishSaleAsync(false));
-        _total.Dock = DockStyle.Fill; _total.TextAlign = ContentAlignment.MiddleLeft;
-        actions.Controls.Add(_total, 0, 0); actions.SetColumnSpan(_total, 2);
         save.Dock = DockStyle.Fill; print.Dock = DockStyle.Fill;
-        actions.Controls.Add(save, 0, 1); actions.Controls.Add(print, 1, 1);
-        right.Controls.Add(actions, 0, 6);
+        actions.Controls.Add(save, 0, 0); actions.Controls.Add(print, 0, 1);
+        right.Controls.Add(actions, 0, 7);
         split.Panel2.Controls.Add(right);
         _seller.Items.AddRange(["Andres", "Maxi", "Gaby", "Facu", "Malena", "Benjamin", "Alejandra", "Elio"]); _seller.SelectedIndex = 0;
         _payment.Items.AddRange(["Efectivo", "Transferencia", "Posnet"]); _payment.SelectedIndex = 0;
@@ -189,43 +180,33 @@ public sealed class MainForm : Form
     private void BuildMoreTab()
     {
         var tab = NewTab("MÁS");
-        var page = new TableLayoutPanel { Dock = DockStyle.Fill, BackColor = Ink, Padding = new Padding(28), ColumnCount = 3, RowCount = 1 };
-        page.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        page.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 960));
-        page.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        var card = new TableLayoutPanel { Dock = DockStyle.Top, Height = 620, Padding = new Padding(34, 26, 34, 28),
-            RowCount = 11, BackColor = PanelColor, ColumnCount = 1, Margin = new Padding(0, 20, 0, 0) };
-        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
-        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
-        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 42)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
-        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 42)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
-        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 42)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
-        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 34)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 78));
-        card.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        var url = new TextBox { Text = _settings.ApiUrl, Dock = DockStyle.Fill }; StyleInput(url);
-        var token = new TextBox { Text = _settings.Token, UseSystemPasswordChar = true, Dock = DockStyle.Fill }; StyleInput(token);
-        var printers = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList,
-            Font = new Font("Segoe UI", 12), BackColor = Color.White, ForeColor = Color.Black };
+        var page = new Panel { Dock = DockStyle.Fill, BackColor = Ink, AutoScroll = true };
+        var card = new Panel { BackColor = PanelColor, Size = new Size(900, 620) };
+        page.Controls.Add(card); tab.Controls.Add(page);
+        var title = new Label { Text = "Configuración", ForeColor = Color.White, Font = new("Segoe UI", 24, FontStyle.Bold), AutoSize = true, Location = new Point(40, 34) };
+        var subtitle = new Label { Text = "Conexión con Google Sheets e impresión del mostrador", ForeColor = Color.FromArgb(180,185,190), Font = new("Segoe UI", 11), AutoSize = true, Location = new Point(42, 84) };
+        var urlLabel = FieldLabel("URL del conector", 142);
+        var url = new TextBox { Text = _settings.ApiUrl, Location = new Point(42, 176), Size = new Size(816, 42), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right }; StyleInput(url);
+        var tokenLabel = FieldLabel("Token privado", 238);
+        var token = new TextBox { Text = _settings.Token, UseSystemPasswordChar = true, Location = new Point(42, 272), Size = new Size(816, 42), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right }; StyleInput(token);
+        var printerLabel = FieldLabel("Impresora de tickets", 334);
+        var printers = new ComboBox { Location = new Point(42, 368), Size = new Size(816, 42), DropDownStyle = ComboBoxStyle.DropDownList,
+            Font = new Font("Segoe UI", 11), BackColor = Color.White, ForeColor = Color.Black, Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right };
         foreach (string name in PrinterSettings.InstalledPrinters) printers.Items.Add(name);
         if (printers.Items.Contains(_settings.PrinterName)) printers.SelectedItem = _settings.PrinterName; else if (printers.Items.Count > 0) printers.SelectedIndex = 0;
-        card.Controls.Add(new Label { Text = "CONFIGURACIÓN", ForeColor = Lime, Font = new("Segoe UI", 22, FontStyle.Bold), AutoSize = true }, 0, 0);
-        card.Controls.Add(new Label { Text = "Conectá Google Sheets y elegí la impresora del mostrador.", ForeColor = Color.Silver,
-            Font = new("Segoe UI", 11), AutoSize = true }, 0, 1);
-        card.Controls.Add(LabelFor("URL del conector Google Sheets"), 0, 2); card.Controls.Add(url, 0, 3);
-        card.Controls.Add(LabelFor("Token privado"), 0, 4); card.Controls.Add(token, 0, 5);
-        card.Controls.Add(LabelFor("Impresora USB instalada en Windows"), 0, 6); card.Controls.Add(printers, 0, 7);
-        card.Controls.Add(new Label { Text = "Podés presionar ENTER después de escribir el token.", ForeColor = Color.Gray,
-            Font = new("Segoe UI", 9.5f, FontStyle.Italic), AutoSize = true }, 0, 8);
-        var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(0, 8, 0, 0) };
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
+        var hint = new Label { Text = "Enter: guardar y comprobar conexión", ForeColor = Color.FromArgb(160,165,170), Font = new("Segoe UI", 9.5f), AutoSize = true, Location = new Point(42, 426) };
         void SaveSettings() { _settings.ApiUrl = url.Text.Trim(); _settings.Token = token.Text.Trim(); _settings.PrinterName = printers.Text; SettingsStore.Save(_settings); }
         var save = ActionButton("GUARDAR", (_, _) => { SaveSettings(); _status.Text = "● CONFIGURACIÓN GUARDADA"; MessageBox.Show("Configuración guardada.", "Cel-Fii Ventas"); });
         var test = ActionButton("GUARDAR Y PROBAR CONEXIÓN", async (_, _) => { SaveSettings(); await RunBusy(async () => { await _api.TestAsync(); await ReloadProductsAsync(); _status.Text = $"● {_allProducts.Count} PRODUCTOS"; MessageBox.Show("Conexión correcta y productos sincronizados.", "Cel-Fii Ventas"); }); });
-        save.Dock = DockStyle.Fill; test.Dock = DockStyle.Fill; buttons.Controls.Add(save, 0, 0); buttons.Controls.Add(test, 1, 0);
+        save.Location = new Point(42, 476); save.Size = new Size(250, 54);
+        test.Location = new Point(310, 476); test.Size = new Size(548, 54);
         token.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { test.PerformClick(); e.SuppressKeyPress = true; } };
-        card.Controls.Add(buttons, 0, 9); page.Controls.Add(card, 1, 0); tab.Controls.Add(page);
-        page.Resize += (_, _) => page.ColumnStyles[1].Width = Math.Min(960, Math.Max(650, page.ClientSize.Width - 80));
+        card.Controls.AddRange([title, subtitle, urlLabel, url, tokenLabel, token, printerLabel, printers, hint, save, test]);
+        page.Resize += (_, _) => { card.Width = Math.Min(900, Math.Max(720, page.ClientSize.Width - 80)); card.Left = Math.Max(40, (page.ClientSize.Width - card.Width) / 2); card.Top = 38; url.Width = token.Width = printers.Width = card.ClientSize.Width - 84; test.Width = card.ClientSize.Width - 352; };
     }
+
+    private static Label FieldLabel(string text, int top) => new() { Text = text, ForeColor = Color.White,
+        Font = new Font("Segoe UI", 10.5f, FontStyle.Bold), AutoSize = true, Location = new Point(42, top) };
 
     private async Task ReloadAllAsync() { await ReloadProductsAsync(); await ReloadHistoryAsync(); }
     private async Task ReloadProductsAsync() => await RunBusy(async () => { _allProducts = await _api.GetProductsAsync(); FilterProducts(); FillProductAdmin(); _status.Text = $"● {_allProducts.Count} PRODUCTOS"; });
