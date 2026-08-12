@@ -80,7 +80,7 @@ public sealed class MainForm : Form
     {
         var tab = NewTab("VENTA");
         var split = new SplitContainer { Dock = DockStyle.Fill, SplitterWidth = 8,
-            Panel1MinSize = 600, Panel2MinSize = 430, FixedPanel = FixedPanel.Panel2,
+            FixedPanel = FixedPanel.Panel2,
             BackColor = Color.FromArgb(40, 45, 40) };
         split.Resize += (_, _) => { if (split.ClientSize.Width > 1050)
             split.SplitterDistance = Math.Max(600, split.ClientSize.Width - 450); };
