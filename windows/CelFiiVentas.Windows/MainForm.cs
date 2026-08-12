@@ -241,10 +241,11 @@ public sealed class MainForm : Form
         SelectionMode = DataGridViewSelectionMode.FullRowSelect, MultiSelect = false,
         BackgroundColor = Ink, GridColor = Color.FromArgb(48, 58, 48), ForeColor = Color.White,
         RowHeadersVisible = false, RowTemplate = { Height = 43 }, BorderStyle = BorderStyle.None,
-        DefaultCellStyle = new DataGridViewCellStyle { BackColor = PanelColor,
-            AlternatingBackColor = Color.FromArgb(16, 21, 17), ForeColor = Color.White,
+        DefaultCellStyle = new DataGridViewCellStyle { BackColor = PanelColor, ForeColor = Color.White,
             SelectionBackColor = Color.FromArgb(72, 105, 34), SelectionForeColor = Color.White,
             Padding = new Padding(9, 5, 9, 5), Font = new Font("Segoe UI", 10.5f) },
+        AlternatingRowsDefaultCellStyle = new DataGridViewCellStyle {
+            BackColor = Color.FromArgb(16, 21, 17), ForeColor = Color.White },
         ColumnHeadersHeight = 44, ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
         ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle { BackColor = Color.FromArgb(30, 45, 22),
             ForeColor = Lime, Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
