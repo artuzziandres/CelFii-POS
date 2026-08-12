@@ -11,12 +11,34 @@ public sealed class Product
     public decimal CardPrice { get; set; }
     public int Stock { get; set; }
     public string Photo { get; set; } = "";
+    public string Photo2 { get; set; } = "";
+    public string Photo3 { get; set; } = "";
     public string Code { get; set; } = "";
     public string BackupCode { get; set; } = "";
     public string Type { get; set; } = "";
     public string Description { get; set; } = "";
     public int MinimumStock { get; set; }
     public decimal CostUsd { get; set; }
+    public decimal Cost { get; set; }
+    public string Brand { get; set; } = "";
+    public string CompatibleModels { get; set; } = "";
+    public string Color { get; set; } = "";
+    public string Supplier { get; set; } = "";
+    public string Quality { get; set; } = "";
+    public string WarrantyInfo { get; set; } = "";
+    public string Imei { get; set; } = "";
+    public string Memory { get; set; } = "";
+    public string Condition { get; set; } = "Nuevo";
+    public string Battery { get; set; } = "";
+    public string Observations { get; set; } = "";
+    public string EquipmentStatus { get; set; } = "Disponible";
+    public string ReservationCustomer { get; set; } = "";
+    public string ReservationPhone { get; set; } = "";
+    public decimal ReservationDeposit { get; set; }
+    public string ReservationDate { get; set; } = "";
+    public string ReservationExpiry { get; set; } = "";
+    [JsonIgnore] public bool IsEquipment => Type.Equals("Equipo", StringComparison.OrdinalIgnoreCase);
+    [JsonIgnore] public bool IsSold => IsEquipment && EquipmentStatus.Equals("Vendido", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class CartLine
@@ -24,6 +46,8 @@ public sealed class CartLine
     [JsonIgnore] public Product Product { get; init; } = new();
     public int Quantity { get; set; } = 1;
     public decimal UnitPrice { get; set; }
+    public decimal OriginalPrice { get; set; }
+    public decimal Difference { get; set; }
     public decimal Total => Quantity * UnitPrice;
 }
 
