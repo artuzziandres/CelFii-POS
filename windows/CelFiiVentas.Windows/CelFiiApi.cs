@@ -31,23 +31,50 @@ public sealed class CelFiiApi
         return doc.RootElement.GetProperty("sales").Deserialize<List<Sale>>(JsonOptions) ?? [];
     }
 
-    public async Task<string> CreateSaleAsync(IEnumerable<CartLine> lines, string seller, string payment)
+    public async Task<string> CreateSaleAsync(IEnumerable<CartLine> lines, string seller, string payment,
+        string customerName = "", string customerPhone = "", int warrantyDays = 0)
     {
         var total = lines.Sum(x => x.Total);
         var result = await PostAsync(new
         {
             action = "createSale",
             clientRequestId = Guid.NewGuid().ToString("N"),
-            seller,
-            lines = lines.Select(x => new { productId = x.Product.Id, quantity = x.Quantity, unitPrice = x.UnitPrice }),
-            payments = new[] { new { method = payment, amount = total } }
+            seller, customerName, customerPhone, warrantyDays,
+            lines = lines.Select(x => new { productId = x.Product.Id, quantity = x.Quantity,
+                originalPrice = x.Product.CashPrice, unitPrice = x.UnitPrice }),
+            payments = BuildPayments(lines, payment, total)
         });
         return result.TryGetProperty("saleId", out var id) ? id.GetString() ?? "" : "";
+    }
+
+    private static object[] BuildPayments(IEnumerable<CartLine> lines, string payment, decimal total)
+    {
+        var deposit = lines.Where(x => x.Product.EquipmentStatus == "Reservado")
+            .Sum(x => x.Product.ReservationDeposit);
+        return deposit > 0
+            ? [new { method = "Seña previa", amount = deposit },
+               new { method = payment, amount = Math.Max(0, total - deposit) }]
+            : [new { method = payment, amount = total }];
     }
 
     public async Task SaveProductAsync(Product product, bool creating)
     {
         await PostAsync(new { action = creating ? "createProduct" : "updateProduct", product });
+    }
+
+    public async Task<string> SaveProductAndReturnIdAsync(Product product, bool creating)
+    {
+        var result = await PostAsync(new { action = creating ? "createProduct" : "updateProduct", product });
+        return result.TryGetProperty("productId", out var id) ? id.GetString() ?? product.Id : product.Id;
+    }
+
+    public async Task UploadPhotoAsync(string productId, string path, int slot)
+    {
+        var bytes = await File.ReadAllBytesAsync(path);
+        var mime = Path.GetExtension(path).Equals(".png", StringComparison.OrdinalIgnoreCase)
+            ? "image/png" : "image/jpeg";
+        await PostAsync(new { action = "uploadProductPhoto", productId, slot, mimeType = mime,
+            base64 = Convert.ToBase64String(bytes) });
     }
 
     private async Task<JsonDocument> GetAsync(string action, params (string Key, string Value)[] args)
