@@ -230,7 +230,7 @@ internal sealed class ProductDialog : Form
             ("Código alternativo", () => product.BackupCode, v => product.BackupCode = v),
             ("Foto (ruta Drive)", () => product.Photo, v => product.Photo = v)
         ]);
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), RowCount = fields.Length * 2 + 1, AutoScroll = true };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), RowCount = fields.Count * 2 + 1, AutoScroll = true };
         foreach (var f in fields) { layout.Controls.Add(new Label { Text = f.Label, AutoSize = true, ForeColor = Color.FromArgb(157,255,0), Padding = new Padding(0,6,0,2) }); var input = new TextBox { Text = f.Get(), Dock = DockStyle.Top, BackColor = Color.FromArgb(30,34,30), ForeColor = Color.White, Font = new("Segoe UI", 11) }; input.TextChanged += (_, _) => f.Set(input.Text); layout.Controls.Add(input); }
         var photoCount = equipment ? 3 : 1;
         for (var slot = 0; slot < photoCount; slot++) {
