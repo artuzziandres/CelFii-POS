@@ -32,6 +32,8 @@ public sealed class MainForm : Form
     {
         _api = new(() => _settings);
         Text = "Cel-Fii Ventas";
+        AutoScaleMode = AutoScaleMode.Dpi;
+        AutoScaleDimensions = new SizeF(96, 96);
         MinimumSize = new Size(1100, 720);
         WindowState = FormWindowState.Maximized;
         BackColor = Ink;
@@ -64,11 +66,11 @@ public sealed class MainForm : Form
 
     private Control BuildHeader()
     {
-        var header = new Panel { Dock = DockStyle.Top, Height = 86, BackColor = Color.Black, Padding = new Padding(22, 10, 22, 8) };
-        var title = new Label { Text = "CEL-FII", ForeColor = Lime, Font = new("Segoe UI", 25, FontStyle.Bold), AutoSize = true, Location = new(105, 12) };
-        var sub = new Label { Text = "VENTAS · WINDOWS", ForeColor = Color.Gray, Font = new("Segoe UI", 10, FontStyle.Bold), AutoSize = true, Location = new(108, 55) };
+        var header = new Panel { Dock = DockStyle.Top, Height = 108, BackColor = Color.Black, Padding = new Padding(22, 10, 22, 8) };
+        var title = new Label { Text = "CEL-FII", ForeColor = Lime, Font = new("Segoe UI", 27, FontStyle.Bold), AutoSize = true, Location = new(112, 13) };
+        var sub = new Label { Text = "VENTAS  |  ESCRITORIO", ForeColor = Color.Silver, Font = new("Segoe UI", 10.5f, FontStyle.Bold), AutoSize = true, Location = new(115, 65) };
         var logoPath = Path.Combine(AppContext.BaseDirectory, "logo_celfii_app.png");
-        if (File.Exists(logoPath)) header.Controls.Add(new PictureBox { Image = Image.FromFile(logoPath), SizeMode = PictureBoxSizeMode.Zoom, Bounds = new(14, 4, 82, 76) });
+        if (File.Exists(logoPath)) header.Controls.Add(new PictureBox { Image = Image.FromFile(logoPath), SizeMode = PictureBoxSizeMode.Zoom, Bounds = new(14, 7, 88, 88) });
         _status.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         _status.Location = new(header.Width - 240, 32);
         header.Resize += (_, _) => _status.Left = header.ClientSize.Width - _status.Width - 24;
@@ -163,17 +165,42 @@ public sealed class MainForm : Form
     private void BuildMoreTab()
     {
         var tab = NewTab("MÁS");
-        var panel = new TableLayoutPanel { Dock = DockStyle.Top, Width = 850, Height = 360, Padding = new Padding(28), RowCount = 7, BackColor = Ink };
+        var page = new TableLayoutPanel { Dock = DockStyle.Fill, BackColor = Ink, Padding = new Padding(28), ColumnCount = 3, RowCount = 1 };
+        page.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        page.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 960));
+        page.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        var card = new TableLayoutPanel { Dock = DockStyle.Top, Height = 590, Padding = new Padding(34, 26, 34, 28),
+            RowCount = 11, BackColor = PanelColor, ColumnCount = 1, Margin = new Padding(0, 20, 0, 0) };
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 38)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 38)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 38)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); card.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
+        card.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var url = new TextBox { Text = _settings.ApiUrl, Dock = DockStyle.Fill }; StyleInput(url);
         var token = new TextBox { Text = _settings.Token, UseSystemPasswordChar = true, Dock = DockStyle.Fill }; StyleInput(token);
-        var printers = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+        var printers = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList,
+            Font = new Font("Segoe UI", 12), BackColor = Color.White, ForeColor = Color.Black };
         foreach (string name in PrinterSettings.InstalledPrinters) printers.Items.Add(name);
         if (printers.Items.Contains(_settings.PrinterName)) printers.SelectedItem = _settings.PrinterName; else if (printers.Items.Count > 0) printers.SelectedIndex = 0;
-        panel.Controls.Add(LabelFor("URL del conector Google Sheets"), 0, 0); panel.Controls.Add(url, 0, 1);
-        panel.Controls.Add(LabelFor("Token privado"), 0, 2); panel.Controls.Add(token, 0, 3);
-        panel.Controls.Add(LabelFor("Impresora USB instalada en Windows"), 0, 4); panel.Controls.Add(printers, 0, 5);
-        panel.Controls.Add(ActionButton("GUARDAR Y PROBAR", async (_, _) => { _settings.ApiUrl = url.Text.Trim(); _settings.Token = token.Text.Trim(); _settings.PrinterName = printers.Text; SettingsStore.Save(_settings); await RunBusy(async () => { await _api.TestAsync(); MessageBox.Show("Conexión correcta.", "Cel-Fii"); }); }), 0, 6);
-        tab.Controls.Add(panel);
+        card.Controls.Add(new Label { Text = "CONFIGURACIÓN", ForeColor = Lime, Font = new("Segoe UI", 22, FontStyle.Bold), AutoSize = true }, 0, 0);
+        card.Controls.Add(new Label { Text = "Conectá Google Sheets y elegí la impresora del mostrador.", ForeColor = Color.Silver,
+            Font = new("Segoe UI", 11), AutoSize = true }, 0, 1);
+        card.Controls.Add(LabelFor("URL del conector Google Sheets"), 0, 2); card.Controls.Add(url, 0, 3);
+        card.Controls.Add(LabelFor("Token privado"), 0, 4); card.Controls.Add(token, 0, 5);
+        card.Controls.Add(LabelFor("Impresora USB instalada en Windows"), 0, 6); card.Controls.Add(printers, 0, 7);
+        card.Controls.Add(new Label { Text = "Podés presionar ENTER después de escribir el token.", ForeColor = Color.Gray,
+            Font = new("Segoe UI", 9.5f, FontStyle.Italic), AutoSize = true }, 0, 8);
+        var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(0, 8, 0, 0) };
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
+        void SaveSettings() { _settings.ApiUrl = url.Text.Trim(); _settings.Token = token.Text.Trim(); _settings.PrinterName = printers.Text; SettingsStore.Save(_settings); }
+        var save = ActionButton("GUARDAR", (_, _) => { SaveSettings(); _status.Text = "● CONFIGURACIÓN GUARDADA"; MessageBox.Show("Configuración guardada.", "Cel-Fii Ventas"); });
+        var test = ActionButton("GUARDAR Y PROBAR CONEXIÓN", async (_, _) => { SaveSettings(); await RunBusy(async () => { await _api.TestAsync(); _status.Text = "● CONECTADO"; MessageBox.Show("Conexión correcta.", "Cel-Fii Ventas"); }); });
+        save.Dock = DockStyle.Fill; test.Dock = DockStyle.Fill; buttons.Controls.Add(save, 0, 0); buttons.Controls.Add(test, 1, 0);
+        token.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { test.PerformClick(); e.SuppressKeyPress = true; } };
+        card.Controls.Add(buttons, 0, 9); page.Controls.Add(card, 1, 0); tab.Controls.Add(page);
+        page.Resize += (_, _) => page.ColumnStyles[1].Width = Math.Min(960, Math.Max(650, page.ClientSize.Width - 80));
     }
 
     private async Task ReloadAllAsync() { await ReloadProductsAsync(); await ReloadHistoryAsync(); }
@@ -251,9 +278,9 @@ public sealed class MainForm : Form
             ForeColor = Lime, Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
             Padding = new Padding(8) }, EnableHeadersVisualStyles = false };
     private static Button ActionButton(string text, EventHandler action) { var b = new Button {
-        Text = text, AutoSize = true, MinimumSize = new Size(112, 46), Height = 46,
+        Text = text, AutoSize = false, MinimumSize = new Size(130, 48), Height = 48,
         BackColor = Lime, ForeColor = Color.Black, FlatStyle = FlatStyle.Flat,
-        Cursor = Cursors.Hand, Font = new("Segoe UI", 10, FontStyle.Bold), Margin = new Padding(6) };
+        Cursor = Cursors.Hand, Font = new("Segoe UI", 10, FontStyle.Bold), Margin = new Padding(6), Padding = new Padding(10, 0, 10, 0) };
         b.FlatAppearance.BorderSize = 0; b.FlatAppearance.MouseOverBackColor = Color.FromArgb(190, 255, 65);
         b.FlatAppearance.MouseDownBackColor = Color.FromArgb(125, 210, 0); b.Click += action; return b; }
     private static Label LabelFor(string text) => new() { Text = text, ForeColor = Color.White, Font = new("Segoe UI", 11, FontStyle.Bold), AutoSize = true, Padding = new Padding(0, 10, 0, 0) };
