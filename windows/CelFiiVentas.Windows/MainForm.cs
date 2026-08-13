@@ -137,35 +137,37 @@ public sealed class MainForm : Form
         _cart.KeyDown += (_, e) => { if (e.KeyCode == Keys.Delete && _cart.CurrentRow is not null) { RemoveCartLine(_cart.CurrentRow.Index); e.Handled = true; } };
 
         var right = new Panel { Dock = DockStyle.Fill, Padding = new Padding(22, 18, 22, 18), BackColor = PanelColor };
-        var ticketTitle = new Label { Text = "TICKET ACTUAL", ForeColor = Lime, Font = new("Segoe UI", 18, FontStyle.Bold),
-            AutoSize = false, Height = 52, Dock = DockStyle.Top, TextAlign = ContentAlignment.MiddleLeft };
-        var footer = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 445, ColumnCount = 1, RowCount = 9,
+        var ticketHeader = new TableLayoutPanel { Dock = DockStyle.Top, Height = 116, ColumnCount = 1, RowCount = 3, BackColor = PanelColor };
+        ticketHeader.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        ticketHeader.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        ticketHeader.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        ticketHeader.Controls.Add(new Label { Text = "TICKET ACTUAL", ForeColor = Lime, Font = new("Segoe UI", 18, FontStyle.Bold),
+            AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+        ticketHeader.Controls.Add(new Label { Text = "TOTAL A PAGAR", ForeColor = Color.White, Font = new("Segoe UI", 9, FontStyle.Bold),
+            AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.BottomLeft }, 0, 1);
+        _total.AutoSize = false; _total.Dock = DockStyle.Fill; _total.TextAlign = ContentAlignment.MiddleLeft;
+        _total.Font = new Font("Segoe UI", 25, FontStyle.Bold); _total.Margin = Padding.Empty;
+        ticketHeader.Controls.Add(_total, 0, 2);
+        var footer = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 312, ColumnCount = 1, RowCount = 7,
             BackColor = PanelColor, Padding = new Padding(0, 10, 0, 0) };
         footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
         footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
         footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
         footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-        footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
-        footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 78));
-        footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
-        footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
-        footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+        footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
         _seller.Dock = DockStyle.Top; _seller.Height = 42; _seller.Font = new Font("Segoe UI", 10.5f); _seller.Margin = new Padding(0, 2, 0, 8);
         _payment.Dock = DockStyle.Top; _payment.Height = 42; _payment.Font = new Font("Segoe UI", 10.5f); _payment.Margin = new Padding(0, 2, 0, 10);
         footer.Controls.Add(LabelFor("Vendedor"), 0, 0); footer.Controls.Add(_seller, 0, 1);
         footer.Controls.Add(LabelFor("Forma de pago"), 0, 2); footer.Controls.Add(_payment, 0, 3);
-        footer.Controls.Add(new Label { Text = "TOTAL A PAGAR", ForeColor = Color.White, Font = new("Segoe UI", 10, FontStyle.Bold),
-            AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.BottomLeft }, 0, 4);
-        _total.AutoSize = false; _total.Dock = DockStyle.Fill; _total.TextAlign = ContentAlignment.MiddleLeft;
-        _total.Font = new Font("Segoe UI", 27, FontStyle.Bold); _total.Margin = Padding.Empty;
-        footer.Controls.Add(_total, 0, 5);
         var print = ActionButton("GUARDAR E IMPRIMIR", async (_, _) => await FinishSaleAsync(true));
         var save = ActionButton("SOLO GUARDAR", async (_, _) => await FinishSaleAsync(false));
         var remove = SecondaryButton("− QUITAR DEL TICKET", (_, _) => { if (_cart.CurrentRow is not null) RemoveCartLine(_cart.CurrentRow.Index); });
         foreach (var button in new[] { remove, save, print }) { button.Dock = DockStyle.Top; button.Height = 54; button.Margin = new Padding(0, 4, 0, 4); }
-        footer.Controls.Add(remove, 0, 6); footer.Controls.Add(save, 0, 7); footer.Controls.Add(print, 0, 8);
+        footer.Controls.Add(remove, 0, 4); footer.Controls.Add(save, 0, 5); footer.Controls.Add(print, 0, 6);
         _cart.Dock = DockStyle.Fill;
-        right.Controls.Add(_cart); right.Controls.Add(footer); right.Controls.Add(ticketTitle);
+        right.Controls.Add(_cart); right.Controls.Add(footer); right.Controls.Add(ticketHeader);
         split.Panel2.Controls.Add(right);
         _seller.Items.AddRange(["Andres", "Maxi", "Gaby", "Facu", "Malena", "Benjamin", "Alejandra", "Elio"]); _seller.SelectedIndex = 0;
         _payment.Items.AddRange(["Efectivo", "Transferencia", "Posnet"]); _payment.SelectedIndex = 0;
