@@ -21,6 +21,8 @@ public sealed class MainForm : Form
     private readonly ComboBox _seller = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly ComboBox _payment = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly ComboBox _saleType = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly CheckBox _onlyStock = new() { Text = "Solo disponibles", Checked = true, AutoSize = true,
+        ForeColor = Color.White, Font = new Font("Segoe UI", 10, FontStyle.Bold), Padding = new Padding(8, 8, 0, 0) };
     private readonly ComboBox _productType = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly Label _total = new() { AutoSize = true, ForeColor = Lime, Font = new("Segoe UI", 24, FontStyle.Bold), Text = "$ 0" };
     private readonly Label _status = new() { AutoSize = true, ForeColor = Color.Silver, Text = "Sin sincronizar" };
@@ -106,7 +108,7 @@ public sealed class MainForm : Form
         var tab = NewTab("VENTA");
         var split = new SplitContainer { Dock = DockStyle.Fill, SplitterWidth = 6, FixedPanel = FixedPanel.Panel2,
             BackColor = SoftPanel };
-        split.Resize += (_, _) => { var ticketWidth = Math.Clamp((int)(split.ClientSize.Width * .28), 420, 540);
+        split.Resize += (_, _) => { var ticketWidth = Math.Clamp((int)(split.ClientSize.Width * .31), 500, 620);
             if (split.ClientSize.Width > ticketWidth + 620) split.SplitterDistance = split.ClientSize.Width - ticketWidth; };
         tab.Controls.Add(split);
         var left = new Panel { Dock = DockStyle.Fill, Padding = new Padding(24, 20, 20, 20), BackColor = Ink };
@@ -120,7 +122,11 @@ public sealed class MainForm : Form
             _searchDelay.Stop(); _searchDelay.Start();
         };
         _search.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { AddExactCode(); e.SuppressKeyPress = true; } };
-        filters.Controls.Add(_saleType, 0, 0);
+        var filterRow = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2 };
+        filterRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); filterRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        filterRow.Controls.Add(_saleType, 0, 0); filterRow.Controls.Add(_onlyStock, 1, 0);
+        _onlyStock.CheckedChanged += (_, _) => FilterProducts();
+        filters.Controls.Add(filterRow, 0, 0);
         filters.Controls.Add(new Label { Text = "Doble clic para agregar · Enter para buscar por código",
             ForeColor = Lime, Font = new("Segoe UI", 10, FontStyle.Bold), AutoSize = true, Margin = new Padding(2, 2, 0, 2) }, 0, 1);
         filters.Controls.Add(_search, 0, 2);
@@ -227,6 +233,7 @@ public sealed class MainForm : Form
     private void FilterProducts()
     {
         var q = _search.Text.Trim(); var list = _allProducts.Where(p => !p.IsSold && MatchesType(p, _saleType.Text));
+        if (_onlyStock.Checked) list = list.Where(p => p.IsEquipment || p.Stock > 0);
         if (!string.IsNullOrEmpty(q)) list = list.Where(p => (p.Name + " " + p.Category + " " + p.Code + " " + p.BackupCode + " " + p.Imei + " " + p.Memory).Contains(q, StringComparison.OrdinalIgnoreCase));
         FillProductsGrid(_products, list);
     }
@@ -238,15 +245,17 @@ public sealed class MainForm : Form
         || selected == "Equipos" && p.Type.StartsWith("Equipo", StringComparison.OrdinalIgnoreCase);
     private static void FillProductsGrid(DataGridView grid, IEnumerable<Product> products)
     {
-        grid.Rows.Clear(); grid.Columns.Clear(); grid.Columns.Add("name", "Producto"); grid.Columns.Add("type", "Tipo"); grid.Columns.Add("details", "Memoria / Color / IMEI"); grid.Columns.Add("price", "Precio"); grid.Columns.Add("status", "Estado / Stock");
+        grid.Rows.Clear(); grid.Columns.Clear(); grid.Columns.Add("name", "Producto"); grid.Columns.Add("details", "Detalle"); grid.Columns.Add("price", "Precio"); grid.Columns.Add("status", "Stock / Estado");
         grid.Columns[0].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
-        grid.Columns[1].Width = 135; grid.Columns[2].Width = 240; grid.Columns[3].Width = 130; grid.Columns[4].Width = 145;
-        foreach (var p in products) { var detail = p.IsEquipment ? $"{p.Memory} · {p.Color} · {p.Imei}" : $"{p.Category} · {p.Code}"; var status = p.IsEquipment ? p.EquipmentStatus : $"Stock {p.Stock}"; var i = grid.Rows.Add(p.Name, string.IsNullOrWhiteSpace(p.Type) ? "Accesorio" : p.Type, detail, p.CashPrice.ToString("C0"), status); grid.Rows[i].Tag = p; }
+        grid.Columns[1].Width = 300; grid.Columns[2].Width = 145; grid.Columns[3].Width = 150;
+        grid.Columns[2].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+        foreach (var p in products) { var detail = p.IsEquipment ? $"{p.Memory} · {p.Color} · IMEI {p.Imei}" : $"{p.Category} · {p.Code}"; var status = p.IsEquipment ? p.EquipmentStatus : p.Stock.ToString(); var i = grid.Rows.Add(p.Name, detail, Money(p.CashPrice), status); grid.Rows[i].Tag = p; if (!p.IsEquipment && p.Stock <= 0) grid.Rows[i].DefaultCellStyle.ForeColor = Color.Gray; }
     }
     private void AddExactCode() { var p = _allProducts.FirstOrDefault(x => x.Code.Equals(_search.Text.Trim(), StringComparison.OrdinalIgnoreCase) || x.BackupCode.Equals(_search.Text.Trim(), StringComparison.OrdinalIgnoreCase)); if (p != null) { AddProduct(p); _search.Clear(); } }
-    private void AddProduct(Product product) { if (product.IsEquipment && string.IsNullOrWhiteSpace(product.Imei)) { MessageBox.Show("Completá el IMEI antes de vender el equipo."); return; } var line = _cartLines.FirstOrDefault(x => x.Product.Id == product.Id); if (line == null) _cartLines.Add(new CartLine { Product = product, Quantity = 1, UnitPrice = product.CashPrice }); else if (!product.IsEquipment && line.Quantity < product.Stock) line.Quantity++; RefreshCart(); }
+    private void AddProduct(Product product) { if (!product.IsEquipment && product.Stock <= 0) { MessageBox.Show("Este producto no tiene stock disponible.", "Cel-Fii Ventas"); return; } if (product.IsEquipment && string.IsNullOrWhiteSpace(product.Imei)) { MessageBox.Show("Completá el IMEI antes de vender el equipo."); return; } var line = _cartLines.FirstOrDefault(x => x.Product.Id == product.Id); if (line == null) _cartLines.Add(new CartLine { Product = product, Quantity = 1, UnitPrice = product.CashPrice }); else if (!product.IsEquipment && line.Quantity < product.Stock) line.Quantity++; RefreshCart(); }
     private void RemoveCartLine(int row) { if (row < 0 || row >= _cartLines.Count) return; var line = _cartLines[row]; if (line.Quantity > 1) line.Quantity--; else _cartLines.RemoveAt(row); RefreshCart(); }
-    private void RefreshCart() { _cart.Rows.Clear(); _cart.Columns.Clear(); _cart.ScrollBars = ScrollBars.Vertical; _cart.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None; _cart.Columns.Add("product", "Producto"); _cart.Columns.Add("qty", "Cant."); _cart.Columns.Add("price", "Precio"); _cart.Columns.Add("total", "Total"); _cart.Columns[0].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; _cart.Columns[1].Width = 58; _cart.Columns[2].Width = 96; _cart.Columns[3].Width = 96; foreach (var x in _cartLines) _cart.Rows.Add(x.Product.Name, x.Quantity, x.UnitPrice.ToString("C0"), x.Total.ToString("C0")); _total.Text = _cartLines.Sum(x => x.Total).ToString("C0"); }
+    private void RefreshCart() { _cart.Rows.Clear(); _cart.Columns.Clear(); _cart.ScrollBars = ScrollBars.Vertical; _cart.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None; _cart.Columns.Add("product", "Producto"); _cart.Columns.Add("qty", "Cant."); _cart.Columns.Add("total", "Total"); _cart.Columns[0].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; _cart.Columns[1].Width = 72; _cart.Columns[2].Width = 145; _cart.Columns[1].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter; _cart.Columns[2].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight; foreach (var x in _cartLines) _cart.Rows.Add(x.Product.Name, x.Quantity, Money(x.Total)); _total.Text = Money(_cartLines.Sum(x => x.Total)); }
+    private static string Money(decimal value) => "$ " + value.ToString("N0", new System.Globalization.CultureInfo("es-AR"));
     private void ChangePrice(int row) { var line = _cartLines[row]; var value = Microsoft.VisualBasic.Interaction.InputBox("Precio final", line.Product.Name, line.UnitPrice.ToString("0.##")); if (decimal.TryParse(value, out var price) && price > 0) { line.UnitPrice = price; RefreshCart(); } }
 
     private async Task FinishSaleAsync(bool print)
