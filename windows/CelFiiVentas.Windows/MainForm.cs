@@ -123,24 +123,27 @@ public sealed class MainForm : Form
         split.Panel1.Controls.Add(left);
         _products.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) AddProduct((Product)_products.Rows[e.RowIndex].Tag); };
         _cart.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) ChangePrice(e.RowIndex); };
+        _cart.KeyDown += (_, e) => { if (e.KeyCode == Keys.Delete && _cart.CurrentRow is not null) { RemoveCartLine(_cart.CurrentRow.Index); e.Handled = true; } };
 
         var right = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 8,
             Padding = new Padding(22, 18, 22, 18), BackColor = PanelColor };
         right.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); right.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         right.RowStyles.Add(new RowStyle(SizeType.Absolute, 38)); right.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
         right.RowStyles.Add(new RowStyle(SizeType.Absolute, 38)); right.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 62)); right.RowStyles.Add(new RowStyle(SizeType.Absolute, 126));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 62)); right.RowStyles.Add(new RowStyle(SizeType.Absolute, 184));
         right.Controls.Add(new Label { Text = "TICKET", ForeColor = Lime, Font = new("Segoe UI", 18, FontStyle.Bold), AutoSize = true }, 0, 0);
         right.Controls.Add(_cart, 0, 1); right.Controls.Add(LabelFor("Vendedor"), 0, 2); right.Controls.Add(_seller, 0, 3);
         right.Controls.Add(LabelFor("Forma de pago"), 0, 4); right.Controls.Add(_payment, 0, 5);
         right.Controls.Add(_total, 0, 6); _total.Dock = DockStyle.Fill; _total.TextAlign = ContentAlignment.MiddleLeft;
-        var actions = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1,
+        var actions = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1,
             Padding = new Padding(0, 8, 0, 0) };
-        actions.RowStyles.Add(new RowStyle(SizeType.Percent, 50)); actions.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        actions.RowStyles.Add(new RowStyle(SizeType.Percent, 33)); actions.RowStyles.Add(new RowStyle(SizeType.Percent, 33)); actions.RowStyles.Add(new RowStyle(SizeType.Percent, 34));
         var print = ActionButton("GUARDAR E IMPRIMIR", async (_, _) => await FinishSaleAsync(true));
         var save = ActionButton("SOLO GUARDAR", async (_, _) => await FinishSaleAsync(false));
+        var remove = SecondaryButton("− QUITAR DEL TICKET", (_, _) => { if (_cart.CurrentRow is not null) RemoveCartLine(_cart.CurrentRow.Index); });
         save.Dock = DockStyle.Fill; print.Dock = DockStyle.Fill;
-        actions.Controls.Add(save, 0, 0); actions.Controls.Add(print, 0, 1);
+        remove.Dock = DockStyle.Fill;
+        actions.Controls.Add(remove, 0, 0); actions.Controls.Add(save, 0, 1); actions.Controls.Add(print, 0, 2);
         right.Controls.Add(actions, 0, 7);
         split.Panel2.Controls.Add(right);
         _seller.Items.AddRange(["Andres", "Maxi", "Gaby", "Facu", "Malena", "Benjamin", "Alejandra", "Elio"]); _seller.SelectedIndex = 0;
@@ -237,6 +240,7 @@ public sealed class MainForm : Form
     }
     private void AddExactCode() { var p = _allProducts.FirstOrDefault(x => x.Code.Equals(_search.Text.Trim(), StringComparison.OrdinalIgnoreCase) || x.BackupCode.Equals(_search.Text.Trim(), StringComparison.OrdinalIgnoreCase)); if (p != null) { AddProduct(p); _search.Clear(); } }
     private void AddProduct(Product product) { if (product.IsEquipment && string.IsNullOrWhiteSpace(product.Imei)) { MessageBox.Show("Completá el IMEI antes de vender el equipo."); return; } var line = _cartLines.FirstOrDefault(x => x.Product.Id == product.Id); if (line == null) _cartLines.Add(new CartLine { Product = product, Quantity = 1, UnitPrice = product.CashPrice }); else if (!product.IsEquipment && line.Quantity < product.Stock) line.Quantity++; RefreshCart(); }
+    private void RemoveCartLine(int row) { if (row < 0 || row >= _cartLines.Count) return; var line = _cartLines[row]; if (line.Quantity > 1) line.Quantity--; else _cartLines.RemoveAt(row); RefreshCart(); }
     private void RefreshCart() { _cart.Rows.Clear(); _cart.Columns.Clear(); _cart.ScrollBars = ScrollBars.Vertical; _cart.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None; _cart.Columns.Add("product", "Producto"); _cart.Columns.Add("qty", "Cant."); _cart.Columns.Add("price", "Precio"); _cart.Columns.Add("total", "Total"); _cart.Columns[0].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; _cart.Columns[1].Width = 58; _cart.Columns[2].Width = 96; _cart.Columns[3].Width = 96; foreach (var x in _cartLines) _cart.Rows.Add(x.Product.Name, x.Quantity, x.UnitPrice.ToString("C0"), x.Total.ToString("C0")); _total.Text = _cartLines.Sum(x => x.Total).ToString("C0"); }
     private void ChangePrice(int row) { var line = _cartLines[row]; var value = Microsoft.VisualBasic.Interaction.InputBox("Precio final", line.Product.Name, line.UnitPrice.ToString("0.##")); if (decimal.TryParse(value, out var price) && price > 0) { line.UnitPrice = price; RefreshCart(); } }
 
@@ -293,6 +297,12 @@ public sealed class MainForm : Form
         Cursor = Cursors.Hand, Font = new("Segoe UI", 10, FontStyle.Bold), Margin = new Padding(6), Padding = new Padding(10, 0, 10, 0) };
         b.FlatAppearance.BorderSize = 0; b.FlatAppearance.MouseOverBackColor = Color.FromArgb(190, 255, 65);
         b.FlatAppearance.MouseDownBackColor = Color.FromArgb(125, 210, 0); b.Click += action; return b; }
+    private static Button SecondaryButton(string text, EventHandler action) { var b = new Button {
+        Text = text, AutoSize = false, Size = new Size(190, 48), MinimumSize = new Size(150, 48),
+        BackColor = SoftPanel, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand,
+        Font = new("Segoe UI", 10, FontStyle.Bold), Margin = new Padding(6), Padding = new Padding(10, 0, 10, 0) };
+        b.FlatAppearance.BorderColor = Color.FromArgb(74, 84, 76); b.FlatAppearance.BorderSize = 1;
+        b.FlatAppearance.MouseOverBackColor = Color.FromArgb(54, 64, 56); b.Click += action; return b; }
     private static Label LabelFor(string text) => new() { Text = text, ForeColor = Color.White, Font = new("Segoe UI", 11, FontStyle.Bold), AutoSize = true, Padding = new Padding(0, 10, 0, 0) };
     private static void StyleInput(TextBox text) { text.BackColor = PanelColor; text.ForeColor = Color.White; text.BorderStyle = BorderStyle.FixedSingle; text.Font = new("Segoe UI", 13); }
 }
