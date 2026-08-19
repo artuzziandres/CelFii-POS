@@ -985,6 +985,8 @@ public final class MainActivity extends Activity {
         EditText memory = editorInput("Memoria", current == null ? "" : current.memory, false);
         EditText battery = editorInput("Estado de batería", current == null ? "" : current.battery, false);
         EditText observations = editorInput("Observaciones particulares", current == null ? "" : current.observations, false);
+        EditText description = editorInput("Descripción para la web",
+                current == null ? "" : current.description, false);
         EditText cost = editorInput("Costo", current == null ? "" : plainNumber(current.cost), true);
         Spinner condition = new Spinner(this);
         condition.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
@@ -1010,11 +1012,11 @@ public final class MainActivity extends Activity {
         form.addView(stock); form.addView(brand);
         if (equipment) {
             form.addView(memory); form.addView(color); form.addView(condition); form.addView(battery);
-            form.addView(imei); form.addView(observations); form.addView(cost);
+            form.addView(imei); form.addView(observations); form.addView(description); form.addView(cost);
         } else {
             form.addView(compatible); form.addView(color); form.addView(supplier);
             if ("Repuesto".equalsIgnoreCase(selectedType)) { form.addView(quality); form.addView(replacementWarranty); }
-            form.addView(codeRow); form.addView(backup); form.addView(cost);
+            form.addView(codeRow); form.addView(backup); form.addView(description); form.addView(cost);
         }
         ScrollView scroll = new ScrollView(this);
         scroll.addView(form);
@@ -1030,11 +1032,11 @@ public final class MainActivity extends Activity {
                     if (decimal(cash) <= 0) { toast("Ingresá el precio"); return; }
                     if (!equipment && integer(stock) <= 0 && current == null) { toast("Ingresá el stock"); return; }
                     Product value = new Product(current == null ? "" : current.id,
-                            name.getText().toString().trim(), category.getText().toString().trim(),
+                            name.getText().toString().trim(), equipment ? "Equipos" : category.getText().toString().trim(),
                             decimal(cash), decimal(card), current == null ? integer(stock) : current.stock,
                             current == null ? "" : current.photo, current == null ? "" : current.photo2,
                             current == null ? "" : current.photo3, "", code.getText().toString().trim(),
-                            backup.getText().toString().trim(), selectedType, current == null ? "" : current.description,
+                            backup.getText().toString().trim(), selectedType, description.getText().toString().trim(),
                             current == null ? 0 : current.minimumStock, brand.getText().toString().trim(),
                             compatible.getText().toString().trim(), color.getText().toString().trim(),
                             supplier.getText().toString().trim(), quality.getText().toString().trim(),

@@ -16,8 +16,11 @@ const CONFIG = Object.freeze({
 
 function doGet(e) {
   try {
-    validateToken_(e.parameter.token);
     const action = String(e.parameter.action || '');
+    // Salida pública y limitada para www.cel-fii.com. Nunca expone costos,
+    // IMEI, reservas, clientes, ventas ni el token del POS.
+    if (action === 'catalog') return json_(getPublicCatalog_());
+    validateToken_(e.parameter.token);
     if (action === 'products') return json_(getProducts_(e.parameter.q || ''));
     if (action === 'productPhoto') return json_(getProductPhoto_(
       e.parameter.productId || '', Number(e.parameter.slot || 1)));
@@ -27,6 +30,41 @@ function doGet(e) {
   } catch (error) {
     return json_({ ok: false, error: error.message });
   }
+}
+
+function getPublicCatalog_() {
+  ensureProductColumns_();
+  const sheet = sheet_(CONFIG.sheets.products);
+  const values = sheet.getDataRange().getDisplayValues();
+  if (values.length < 2) return { ok: true, products: [] };
+  const headers = headerMap_(values[0]);
+  const products = [];
+  for (let row = 1; row < values.length; row++) {
+    const source = values[row];
+    const id = cell_(source, headers, 'idArticulos');
+    const name = cell_(source, headers, 'Nombre');
+    const type = cell_(source, headers, 'Tipo') || 'Accesorio';
+    const equipmentStatus = cell_(source, headers, 'Estado Equipo') || 'Disponible';
+    if (!id || !name) continue;
+    if (normalize_(type) === 'equipo' && normalize_(equipmentStatus) === 'vendido') continue;
+    products.push({
+      id: id,
+      name: name,
+      category: cell_(source, headers, 'Categoría'),
+      cashPrice: number_(cell_(source, headers, 'Precio Efectivo')),
+      cardPrice: number_(cell_(source, headers, 'Precio en 3 Cuotas')),
+      stock: Math.floor(number_(cell_(source, headers,
+        headers['Stock Actual 2'] !== undefined ? 'Stock Actual 2' : 'Stock Actual'))),
+      status: equipmentStatus,
+      type: type,
+      condition: cell_(source, headers, 'Condición'),
+      description: cell_(source, headers, 'Descripcion '),
+      photo: cell_(source, headers, 'Foto URL'),
+      photo2: cell_(source, headers, 'Foto URL_2'),
+      photo3: cell_(source, headers, 'Foto URL_3')
+    });
+  }
+  return { ok: true, updatedAt: new Date().toISOString(), products: products };
 }
 
 function doPost(e) {
@@ -438,7 +476,8 @@ function uploadProductPhoto_(body) {
   const extension = body.mimeType === 'image/png' ? '.png' : '.jpg';
   const fileName = body.productId + '.Foto.' + Date.now() + extension;
   const blob = Utilities.newBlob(bytes, body.mimeType, fileName);
-  DriveApp.getFolderById(CONFIG.photoFolderId).createFile(blob);
+  const file = DriveApp.getFolderById(CONFIG.photoFolderId).createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
   const sheet = sheet_(CONFIG.sheets.products);
   const values = sheet.getDataRange().getValues();
@@ -449,6 +488,9 @@ function uploadProductPhoto_(body) {
   const slot = Math.max(1, Math.min(3, Math.floor(Number(body.slot || 1))));
   const photoHeader = slot === 1 ? 'Foto' : 'Foto_' + slot;
   sheet.getRange(rowIndex + 1, headers[photoHeader] + 1).setValue(relativePath);
+  const urlHeader = slot === 1 ? 'Foto URL' : 'Foto URL_' + slot;
+  sheet.getRange(rowIndex + 1, headers[urlHeader] + 1)
+    .setValue('https://drive.google.com/uc?export=view&id=' + file.getId());
   SpreadsheetApp.flush();
   return { ok: true, path: relativePath };
 }
@@ -494,8 +536,42 @@ function ensureProductColumns_() {
     'Tipo', 'Marca', 'Modelos Compatibles', 'Color', 'Proveedor', 'Calidad',
     'Garantía Repuesto', 'IMEI', 'Memoria', 'Condición', 'Batería',
     'Observaciones', 'Estado Equipo', 'Reserva Cliente', 'Reserva Teléfono',
-    'Reserva Seña', 'Reserva Fecha', 'Reserva Vencimiento', 'Costo', 'Foto_2', 'Foto_3'
+    'Reserva Seña', 'Reserva Fecha', 'Reserva Vencimiento', 'Costo', 'Foto_2', 'Foto_3',
+    'Foto URL', 'Foto URL_2', 'Foto URL_3'
   ]);
+}
+
+/**
+ * Ejecutar una sola vez después de instalar esta versión. Publica únicamente
+ * las fotos de productos existentes y completa sus URL para la web.
+ */
+function prepararFotosWeb() {
+  ensureProductColumns_();
+  const sheet = sheet_(CONFIG.sheets.products);
+  const values = sheet.getDataRange().getDisplayValues();
+  if (values.length < 2) return 0;
+  const headers = headerMap_(values[0]);
+  const folder = DriveApp.getFolderById(CONFIG.photoFolderId);
+  let updated = 0;
+  for (let row = 1; row < values.length; row++) {
+    for (let slot = 1; slot <= 3; slot++) {
+      const photoHeader = slot === 1 ? 'Foto' : 'Foto_' + slot;
+      const urlHeader = slot === 1 ? 'Foto URL' : 'Foto URL_' + slot;
+      if (cell_(values[row], headers, urlHeader)) continue;
+      const path = String(cell_(values[row], headers, photoHeader) || '');
+      const fileName = path.substring(path.lastIndexOf('/') + 1);
+      if (!fileName) continue;
+      const files = folder.getFilesByName(fileName);
+      if (!files.hasNext()) continue;
+      const file = files.next();
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      sheet.getRange(row + 1, headers[urlHeader] + 1)
+        .setValue('https://drive.google.com/uc?export=view&id=' + file.getId());
+      updated++;
+    }
+  }
+  SpreadsheetApp.flush();
+  return updated;
 }
 
 function ensureHeaders_(sheet, required) {
