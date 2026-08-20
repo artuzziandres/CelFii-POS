@@ -6,7 +6,9 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.graphics.Matrix;
 import android.graphics.Typeface;
+import android.media.ExifInterface;
 import android.net.Uri;
 import android.os.Bundle;
 import android.content.pm.PackageManager;
@@ -39,6 +41,7 @@ import com.journeyapps.barcodescanner.DecoratedBarcodeView;
 import com.journeyapps.barcodescanner.DefaultDecoderFactory;
 
 import java.nio.charset.Charset;
+import java.io.InputStream;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -987,7 +990,8 @@ public final class MainActivity extends Activity {
         EditText observations = editorInput("Observaciones particulares", current == null ? "" : current.observations, false);
         EditText description = editorInput("Descripción para la web",
                 current == null ? "" : current.description, false);
-        EditText cost = editorInput("Costo", current == null ? "" : plainNumber(current.cost), true);
+        EditText cost = editorInput("Costo interno (opcional)",
+                current == null || current.cost <= 0 ? "" : plainNumber(current.cost), true);
         Spinner condition = new Spinner(this);
         condition.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
                 new String[]{"Nuevo", "Usado"}));
@@ -1104,6 +1108,7 @@ public final class MainActivity extends Activity {
         if (uri == null) return;
         try {
             Bitmap original = MediaStore.Images.Media.getBitmap(getContentResolver(), uri);
+            original = applyExifOrientation(uri, original);
             int max = Math.max(original.getWidth(), original.getHeight());
             if (max > 1200) {
                 float scale = 1200f / max;
@@ -1114,6 +1119,26 @@ public final class MainActivity extends Activity {
             if (pendingPhotoPreviews[pendingPhotoSlot] != null)
                 pendingPhotoPreviews[pendingPhotoSlot].setImageBitmap(pendingProductPhotos[pendingPhotoSlot]);
         } catch (Exception error) { toast("No se pudo abrir la foto"); }
+    }
+
+    private Bitmap applyExifOrientation(Uri uri, Bitmap source) {
+        try (InputStream stream = getContentResolver().openInputStream(uri)) {
+            if (stream == null) return source;
+            ExifInterface exif = new ExifInterface(stream);
+            int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL);
+            float degrees;
+            if (orientation == ExifInterface.ORIENTATION_ROTATE_90) degrees = 90;
+            else if (orientation == ExifInterface.ORIENTATION_ROTATE_180) degrees = 180;
+            else if (orientation == ExifInterface.ORIENTATION_ROTATE_270) degrees = 270;
+            else return source;
+            Matrix matrix = new Matrix();
+            matrix.postRotate(degrees);
+            Bitmap rotated = Bitmap.createBitmap(source, 0, 0, source.getWidth(),
+                    source.getHeight(), matrix, true);
+            if (rotated != source) source.recycle();
+            return rotated;
+        } catch (Exception ignored) { return source; }
     }
 
     private void loadProductPhoto(ImageView view, String url, String productId, int slot) {
