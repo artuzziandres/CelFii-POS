@@ -87,8 +87,9 @@ public final class MainActivity extends Activity {
     private final Bitmap[] pendingProductPhotos = new Bitmap[3];
     private final ImageView[] pendingPhotoPreviews = new ImageView[3];
     private int pendingPhotoSlot;
-    private String selectedTypeFilter = "Todos";
-    private static final String[] PRODUCT_TYPES = {"Todos", "Accesorios", "Repuestos", "Equipos"};
+    private boolean showAccessories = true;
+    private boolean showParts = true;
+    private boolean showEquipment = true;
     private static final String[] SELLERS = {
             "Andres", "Maxi", "Gaby", "Facu", "Malena", "Benjamin", "Alejandra", "Elio"
     };
@@ -255,24 +256,70 @@ public final class MainActivity extends Activity {
     }
 
     private View typeFilter() {
-        Spinner spinner = new Spinner(this);
-        spinner.setAdapter(new ArrayAdapter<>(this,
-                android.R.layout.simple_spinner_dropdown_item, PRODUCT_TYPES));
-        for (int i = 0; i < PRODUCT_TYPES.length; i++) {
-            if (PRODUCT_TYPES[i].equals(selectedTypeFilter)) spinner.setSelection(i);
-        }
-        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(AdapterView<?> parent, View view,
-                                                  int position, long id) {
-                selectedTypeFilter = PRODUCT_TYPES[position];
-                filterProducts(activeSearch == null ? "" : activeSearch.getText().toString());
-            }
-            @Override public void onNothingSelected(AdapterView<?> parent) { }
+        LinearLayout container = column();
+        TextView status = label("", 11, MUTED, true);
+        LinearLayout buttons = row();
+        Button accessories = actionButton("ACCESORIOS", showAccessories);
+        Button parts = actionButton("REPUESTOS", showParts);
+        Button equipment = actionButton("EQUIPOS", showEquipment);
+        buttons.addView(accessories, new LinearLayout.LayoutParams(0, dp(43), 1));
+        buttons.addView(parts, new LinearLayout.LayoutParams(0, dp(43), 1));
+        buttons.addView(equipment, new LinearLayout.LayoutParams(0, dp(43), 1));
+
+        Runnable refresh = () -> {
+            styleTypeButton(accessories, showAccessories);
+            styleTypeButton(parts, showParts);
+            styleTypeButton(equipment, showEquipment);
+            status.setText(typeFilterSummary());
+            filterProducts(activeSearch == null ? "" : activeSearch.getText().toString());
+        };
+        accessories.setOnClickListener(view -> {
+            if (!canDisableType(showAccessories)) return;
+            showAccessories = !showAccessories;
+            refresh.run();
         });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(48));
+        parts.setOnClickListener(view -> {
+            if (!canDisableType(showParts)) return;
+            showParts = !showParts;
+            refresh.run();
+        });
+        equipment.setOnClickListener(view -> {
+            if (!canDisableType(showEquipment)) return;
+            showEquipment = !showEquipment;
+            refresh.run();
+        });
+
+        status.setText(typeFilterSummary());
+        status.setPadding(dp(3), 0, 0, dp(4));
+        container.addView(status);
+        container.addView(buttons);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
         params.bottomMargin = dp(7);
-        spinner.setLayoutParams(params);
-        return spinner;
+        container.setLayoutParams(params);
+        return container;
+    }
+
+    private boolean canDisableType(boolean selected) {
+        if (selected && (showAccessories ? 1 : 0) + (showParts ? 1 : 0)
+                + (showEquipment ? 1 : 0) == 1) {
+            toast("Seleccioná al menos una categoría");
+            return false;
+        }
+        return true;
+    }
+
+    private void styleTypeButton(Button button, boolean selected) {
+        button.setTextColor(selected ? BLACK : LIME);
+        button.setBackgroundColor(selected ? LIME : PANEL);
+    }
+
+    private String typeFilterSummary() {
+        if (showAccessories && showParts && showEquipment) return "MOSTRANDO: TODOS";
+        List<String> selected = new ArrayList<>();
+        if (showAccessories) selected.add("ACCESORIOS");
+        if (showParts) selected.add("REPUESTOS");
+        if (showEquipment) selected.add("EQUIPOS");
+        return "MOSTRANDO: " + String.join(" + ", selected);
     }
 
     private void scanBarcode(EditText destination) {
@@ -359,12 +406,11 @@ public final class MainActivity extends Activity {
     }
 
     private boolean matchesTypeFilter(Product product) {
-        if ("Todos".equals(selectedTypeFilter)) return true;
         String type = product.type == null || product.type.isBlank() ? "Accesorio" : product.type;
         String normalized = type.toLowerCase(Locale.ROOT);
-        if ("Accesorios".equals(selectedTypeFilter)) return normalized.startsWith("accesorio");
-        if ("Repuestos".equals(selectedTypeFilter)) return normalized.startsWith("repuesto");
-        return normalized.startsWith("equipo");
+        if (normalized.startsWith("repuesto")) return showParts;
+        if (normalized.startsWith("equipo")) return showEquipment;
+        return showAccessories;
     }
 
     private void chooseProductType() {
