@@ -16,9 +16,15 @@ const CONFIG = Object.freeze({
 
 function doGet(e) {
   try {
-    validateToken_(e.parameter.token);
     const action = String(e.parameter.action || '');
+    // Salida pública y limitada para www.cel-fii.com. Nunca expone costos,
+    // IMEI, reservas, clientes, ventas ni el token del POS.
+    if (action === 'catalog') return json_(getPublicCatalog_());
+    validateToken_(e.parameter.token);
     if (action === 'products') return json_(getProducts_(e.parameter.q || ''));
+    if (action === 'productPhoto') return json_(getProductPhoto_(
+      e.parameter.productId || '', Number(e.parameter.slot || 1)));
+    if (action === 'sales') return json_(getSales_(e.parameter.month || ''));
     if (action === 'health') return json_({ ok: true, service: 'Cel-Fii POS' });
     throw new Error('Acción no válida');
   } catch (error) {
@@ -26,11 +32,48 @@ function doGet(e) {
   }
 }
 
+function getPublicCatalog_() {
+  ensureProductColumns_();
+  const sheet = sheet_(CONFIG.sheets.products);
+  const values = sheet.getDataRange().getDisplayValues();
+  if (values.length < 2) return { ok: true, products: [] };
+  const headers = headerMap_(values[0]);
+  const products = [];
+  for (let row = 1; row < values.length; row++) {
+    const source = values[row];
+    const id = cell_(source, headers, 'idArticulos');
+    const name = cell_(source, headers, 'Nombre');
+    const type = cell_(source, headers, 'Tipo') || 'Accesorio';
+    const equipmentStatus = cell_(source, headers, 'Estado Equipo') || 'Disponible';
+    if (!id || !name) continue;
+    if (normalize_(type) === 'equipo' && normalize_(equipmentStatus) === 'vendido') continue;
+    products.push({
+      id: id,
+      name: name,
+      category: cell_(source, headers, 'Categoría'),
+      cashPrice: number_(cell_(source, headers, 'Precio Efectivo')),
+      cardPrice: number_(cell_(source, headers, 'Precio en 3 Cuotas')),
+      stock: Math.floor(number_(cell_(source, headers,
+        headers['Stock Actual 2'] !== undefined ? 'Stock Actual 2' : 'Stock Actual'))),
+      status: equipmentStatus,
+      type: type,
+      condition: cell_(source, headers, 'Condición'),
+      description: cell_(source, headers, 'Descripcion '),
+      photo: cell_(source, headers, 'Foto URL'),
+      photo2: cell_(source, headers, 'Foto URL_2'),
+      photo3: cell_(source, headers, 'Foto URL_3')
+    });
+  }
+  return { ok: true, updatedAt: new Date().toISOString(), products: products };
+}
+
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents || '{}');
     validateToken_(body.token);
     if (body.action === 'createSale') return json_(createSale_(body));
+    if (body.action === 'createProduct') return json_(createProduct_(body));
+    if (body.action === 'updateProduct') return json_(updateProduct_(body));
     if (body.action === 'uploadProductPhoto') return json_(uploadProductPhoto_(body));
     throw new Error('Acción no válida');
   } catch (error) {
@@ -47,6 +90,7 @@ function setupCelFiiPos() {
 }
 
 function getProducts_(query) {
+  ensureProductColumns_();
   const sheet = sheet_(CONFIG.sheets.products);
   const values = sheet.getDataRange().getDisplayValues();
   if (values.length < 2) return { ok: true, products: [] };
@@ -54,7 +98,7 @@ function getProducts_(query) {
   const needle = normalize_(query);
   const products = [];
 
-  for (let row = 1; row < values.length && products.length < 250; row++) {
+  for (let row = 1; row < values.length; row++) {
     const source = values[row];
     const name = cell_(source, headers, 'Nombre');
     const id = cell_(source, headers, 'idArticulos');
@@ -72,11 +116,116 @@ function getProducts_(query) {
       category: cell_(source, headers, 'Categoría'),
       cashPrice: number_(cell_(source, headers, 'Precio Efectivo')),
       cardPrice: number_(cell_(source, headers, 'Precio en 3 Cuotas')),
-      stock: Math.floor(number_(cell_(source, headers, 'Stock Actual'))),
-      photo: cell_(source, headers, 'Foto')
+      stock: Math.floor(number_(cell_(source, headers,
+        headers['Stock Actual 2'] !== undefined ? 'Stock Actual 2' : 'Stock Actual'))),
+      photo: cell_(source, headers, 'Foto'),
+      code: cell_(source, headers, 'Codigo'),
+      backupCode: cell_(source, headers, 'Codigo_Backup'),
+      type: cell_(source, headers, 'Tipo'),
+      description: cell_(source, headers, 'Descripcion '),
+      minimumStock: Math.floor(number_(cell_(source, headers, 'Stock Minimo'))),
+      costUsd: number_(cell_(source, headers, 'Costo en Dolares'))
+      ,photo2: cell_(source, headers, 'Foto_2')
+      ,photo3: cell_(source, headers, 'Foto_3')
+      ,brand: cell_(source, headers, 'Marca')
+      ,compatibleModels: cell_(source, headers, 'Modelos Compatibles')
+      ,color: cell_(source, headers, 'Color')
+      ,supplier: cell_(source, headers, 'Proveedor')
+      ,quality: cell_(source, headers, 'Calidad')
+      ,warrantyInfo: cell_(source, headers, 'Garantía Repuesto')
+      ,imei: cell_(source, headers, 'IMEI')
+      ,memory: cell_(source, headers, 'Memoria')
+      ,condition: cell_(source, headers, 'Condición')
+      ,battery: cell_(source, headers, 'Batería')
+      ,observations: cell_(source, headers, 'Observaciones')
+      ,equipmentStatus: cell_(source, headers, 'Estado Equipo') || 'Disponible'
+      ,reservationCustomer: cell_(source, headers, 'Reserva Cliente')
+      ,reservationPhone: cell_(source, headers, 'Reserva Teléfono')
+      ,reservationDeposit: number_(cell_(source, headers, 'Reserva Seña'))
+      ,reservationDate: cell_(source, headers, 'Reserva Fecha')
+      ,reservationExpiry: cell_(source, headers, 'Reserva Vencimiento')
+      ,cost: number_(cell_(source, headers, 'Costo'))
     });
   }
   return { ok: true, products: products };
+}
+
+function getSales_(requestedMonth) {
+  ensureColumns_();
+  const salesSheet = sheet_(CONFIG.sheets.sales);
+  const detailsSheet = sheet_(CONFIG.sheets.details);
+  const productsSheet = sheet_(CONFIG.sheets.products);
+  const salesData = salesSheet.getDataRange().getValues();
+  const detailData = detailsSheet.getDataRange().getValues();
+  const productData = productsSheet.getDataRange().getValues();
+  if (salesData.length < 2) return { ok: true, sales: [] };
+
+  const salesHeaders = headerMap_(salesData[0]);
+  const detailHeaders = detailData.length ? headerMap_(detailData[0]) : {};
+  const productHeaders = productData.length ? headerMap_(productData[0]) : {};
+  const productNames = {};
+  const detailsBySale = {};
+
+  for (let row = 1; row < productData.length; row++) {
+    const id = cell_(productData[row], productHeaders, 'idArticulos');
+    if (id) {
+      productNames[id] = cell_(productData[row], productHeaders, 'Nombre');
+      if (normalize_(cell_(productData[row], productHeaders, 'Tipo')) === 'equipo') {
+        productNames[id] += '\nIMEI: ' + cell_(productData[row], productHeaders, 'IMEI');
+      }
+    }
+  }
+
+  for (let row = 1; row < detailData.length; row++) {
+    const source = detailData[row];
+    const saleId = cell_(source, detailHeaders, 'idVenta');
+    if (!saleId) continue;
+    const productId = cell_(source, detailHeaders, 'idArticulos');
+    if (!detailsBySale[saleId]) detailsBySale[saleId] = [];
+    detailsBySale[saleId].push({
+      productId: productId,
+      name: productNames[productId] || productId,
+      quantity: Math.floor(number_(cell_(source, detailHeaders, 'Cantidad'))),
+      originalPrice: number_(cell_(source, detailHeaders, 'Precio Original')),
+      unitPrice: number_(cell_(source, detailHeaders, 'Precio Unitario')),
+      difference: number_(cell_(source, detailHeaders, 'Diferencia')),
+      total: number_(cell_(source, detailHeaders, 'Total'))
+    });
+  }
+
+  const timezone = SpreadsheetApp.openById(CONFIG.spreadsheetId)
+    .getSpreadsheetTimeZone() || Session.getScriptTimeZone();
+  const monthFilter = String(requestedMonth || '').trim();
+  const sales = [];
+
+  for (let row = 1; row < salesData.length; row++) {
+    const source = salesData[row];
+    const saleId = cell_(source, salesHeaders, 'idVenta');
+    if (!saleId) continue;
+    const rawDate = source[salesHeaders['Fecha']];
+    const validDate = rawDate instanceof Date && !isNaN(rawDate.getTime());
+    const month = cell_(source, salesHeaders, 'Mes')
+      || (validDate ? Utilities.formatDate(rawDate, timezone, 'yyyy-MM') : 'Sin fecha');
+    if (monthFilter && month !== monthFilter) continue;
+    sales.push({
+      id: saleId,
+      timestamp: validDate ? rawDate.getTime() : 0,
+      date: validDate ? Utilities.formatDate(rawDate, timezone, 'dd/MM/yyyy HH:mm')
+        : String(rawDate || ''),
+      month: month,
+      seller: cell_(source, salesHeaders, 'Vendedor'),
+      total: number_(cell_(source, salesHeaders, 'Total')),
+      payment: cell_(source, salesHeaders, 'Medios de pago'),
+      status: cell_(source, salesHeaders, 'Estado'),
+      customerName: cell_(source, salesHeaders, 'Cliente Nombre'),
+      customerPhone: cell_(source, salesHeaders, 'Cliente Teléfono'),
+      warrantyDays: Math.floor(number_(cell_(source, salesHeaders, 'Garantía Días'))),
+      details: detailsBySale[saleId] || []
+    });
+  }
+
+  sales.sort(function(a, b) { return b.timestamp - a.timestamp; });
+  return { ok: true, sales: sales };
 }
 
 function createSale_(body) {
@@ -120,7 +269,11 @@ function createSale_(body) {
       if (rowIndex < 1) throw new Error('Artículo inexistente: ' + line.productId);
       const quantity = Math.floor(Number(line.quantity));
       const unitPrice = Number(line.unitPrice);
-      const stock = number_(productData[rowIndex][productHeaders['Stock Actual']]);
+      const originalPrice = Number(line.originalPrice === undefined
+        ? line.unitPrice : line.originalPrice);
+      const stockHeader = productHeaders['Stock Actual 2'] !== undefined
+        ? productHeaders['Stock Actual 2'] : productHeaders['Stock Actual'];
+      const stock = number_(productData[rowIndex][stockHeader]);
       if (!quantity || quantity < 1) throw new Error('Cantidad inválida');
       if (stock < quantity) {
         throw new Error(
@@ -135,8 +288,9 @@ function createSale_(body) {
         productId: String(line.productId),
         quantity: quantity,
         unitPrice: unitPrice,
-        total: lineTotal,
-        newStock: stock - quantity
+        originalPrice: originalPrice,
+        difference: round2_(lineTotal - quantity * originalPrice),
+        total: lineTotal
       });
     });
 
@@ -150,6 +304,9 @@ function createSale_(body) {
 
     const saleId = Utilities.getUuid().split('-')[0].toUpperCase();
     const now = new Date();
+    const timezone = SpreadsheetApp.openById(CONFIG.spreadsheetId)
+      .getSpreadsheetTimeZone() || Session.getScriptTimeZone();
+    const saleMonth = Utilities.formatDate(now, timezone, 'yyyy-MM');
     const paymentSummary = body.payments.map(function(payment) {
       const installments = Number(payment.installments || 0);
       return payment.method + (installments ? ' (' + installments + ' cuotas)' : '')
@@ -159,6 +316,7 @@ function createSale_(body) {
     appendMappedRow_(salesSheet, salesHeaders, {
       idVenta: saleId,
       Fecha: now,
+      Mes: saleMonth,
       idClientes: String(body.customerId || ''),
       Vendedor: String(body.seller || ''),
       Total: total,
@@ -166,6 +324,9 @@ function createSale_(body) {
       'Pagos JSON': JSON.stringify(body.payments),
       Estado: 'Confirmada',
       requestId: String(body.clientRequestId || '')
+      ,'Cliente Nombre': String(body.customerName || '')
+      ,'Cliente Teléfono': String(body.customerPhone || '')
+      ,'Garantía Días': Math.max(0, Math.floor(number_(body.warrantyDays)))
     });
 
     const detailHeaders = headerMap_(detailsSheet.getRange(
@@ -177,7 +338,9 @@ function createSale_(body) {
         idVenta: saleId,
         idArticulos: line.productId,
         Cantidad: line.quantity,
+        'Precio Original': line.originalPrice,
         'Precio Unitario': line.unitPrice,
+        Diferencia: line.difference,
         Total: line.total
       });
     });
@@ -185,10 +348,14 @@ function createSale_(body) {
       detailsSheet.getLastRow() + 1, 1, detailRows.length, detailsSheet.getLastColumn()
     ).setValues(detailRows);
 
-    const stockColumn = productHeaders['Stock Actual'] + 1;
     resolved.forEach(function(line) {
-      productsSheet.getRange(line.rowIndex + 1, stockColumn).setValue(line.newStock);
+      const type = String(productData[line.rowIndex][productHeaders['Tipo']] || '');
+      if (normalize_(type) === 'equipo' && productHeaders['Estado Equipo'] !== undefined) {
+        productsSheet.getRange(line.rowIndex + 1,
+          productHeaders['Estado Equipo'] + 1).setValue('Vendido');
+      }
     });
+
     SpreadsheetApp.flush();
     return { ok: true, saleId: saleId, total: total };
   } finally {
@@ -196,7 +363,112 @@ function createSale_(body) {
   }
 }
 
+function createProduct_(body) {
+  ensureProductColumns_();
+  const product = body.product || {};
+  if (!String(product.name || '').trim()) throw new Error('Falta el nombre');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = sheet_(CONFIG.sheets.products);
+    const headers = headerMap_(sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]);
+    const id = Utilities.getUuid().replace(/-/g, '').substring(0, 8);
+    const row = sheet.getLastRow() + 1;
+    if (row > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), 1);
+    prepareNewProductRow_(sheet, row);
+    writeProductFields_(sheet, headers, row, product, true, id);
+    SpreadsheetApp.flush();
+    return { ok: true, productId: id };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Conserva en cada alta las validaciones, el formato y las fórmulas de la tabla
+ * (especialmente Stock Actual 2). Así la fila también funciona en AppSheet y web.
+ */
+function prepareNewProductRow_(sheet, row) {
+  if (row <= 2) return;
+  const columns = sheet.getLastColumn();
+  const source = sheet.getRange(row - 1, 1, 1, columns);
+  const target = sheet.getRange(row, 1, 1, columns);
+  source.copyTo(target, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+  source.copyTo(target, SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
+  const formulas = source.getFormulasR1C1()[0];
+  formulas.forEach(function(formula, column) {
+    if (formula) target.getCell(1, column + 1).setFormulaR1C1(formula);
+  });
+}
+
+function updateProduct_(body) {
+  ensureProductColumns_();
+  const product = body.product || {};
+  const id = String(product.id || '');
+  if (!id) throw new Error('Falta el artículo');
+  if (!String(product.name || '').trim()) throw new Error('Falta el nombre');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = sheet_(CONFIG.sheets.products);
+    const values = sheet.getDataRange().getValues();
+    const headers = headerMap_(values[0]);
+    const index = findRowByValue_(values, headers['idArticulos'], id);
+    if (index < 1) throw new Error('Artículo inexistente');
+    writeProductFields_(sheet, headers, index + 1, product, false, id);
+    SpreadsheetApp.flush();
+    return { ok: true, productId: id };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function writeProductFields_(sheet, headers, row, product, creating, id) {
+  const values = {
+    Nombre: String(product.name || '').trim(),
+    'Categoría': String(product.category || '').trim(),
+    'Precio Efectivo': number_(product.cashPrice),
+    'Precio en 3 Cuotas': number_(product.cardPrice),
+    idArticulos: id,
+    Codigo: String(product.code || '').trim(),
+    Tipo: String(product.type || 'Accesorio').trim(),
+    Fecha: creating ? new Date() : undefined,
+    'Costo en Dolares': number_(product.costUsd),
+    'Descripcion ': String(product.description || '').trim(),
+    'Stock Minimo': Math.max(0, Math.floor(number_(product.minimumStock))),
+    Codigo_Backup: String(product.backupCode || '').trim()
+    ,Marca: String(product.brand || '').trim()
+    ,'Modelos Compatibles': String(product.compatibleModels || '').trim()
+    ,Color: String(product.color || '').trim()
+    ,Proveedor: String(product.supplier || '').trim()
+    ,Calidad: String(product.quality || '').trim()
+    ,'Garantía Repuesto': String(product.warrantyInfo || '').trim()
+    ,IMEI: String(product.imei || '').trim()
+    ,Memoria: String(product.memory || '').trim()
+    ,'Condición': String(product.condition || '').trim()
+    ,'Batería': String(product.battery || '').trim()
+    ,Observaciones: String(product.observations || '').trim()
+    ,'Estado Equipo': String(product.equipmentStatus || 'Disponible').trim()
+    ,'Reserva Cliente': String(product.reservationCustomer || '').trim()
+    ,'Reserva Teléfono': String(product.reservationPhone || '').trim()
+    ,'Reserva Seña': number_(product.reservationDeposit)
+    ,'Reserva Fecha': String(product.reservationDate || '').trim()
+    ,'Reserva Vencimiento': String(product.reservationExpiry || '').trim()
+    ,Costo: number_(product.cost)
+  };
+  if (creating) {
+    values['Stock Inicial'] = Math.max(0, Math.floor(number_(product.initialStock)));
+    values['Stock Actual'] = values['Stock Inicial'];
+  }
+  Object.keys(values).forEach(function(name) {
+    if (values[name] !== undefined && headers[name] !== undefined) {
+      sheet.getRange(row, headers[name] + 1).setValue(values[name]);
+    }
+  });
+}
+
 function uploadProductPhoto_(body) {
+  ensureProductColumns_();
   if (!body.productId || !body.base64 || !body.mimeType) {
     throw new Error('Faltan datos de la imagen');
   }
@@ -204,7 +476,8 @@ function uploadProductPhoto_(body) {
   const extension = body.mimeType === 'image/png' ? '.png' : '.jpg';
   const fileName = body.productId + '.Foto.' + Date.now() + extension;
   const blob = Utilities.newBlob(bytes, body.mimeType, fileName);
-  DriveApp.getFolderById(CONFIG.photoFolderId).createFile(blob);
+  const file = DriveApp.getFolderById(CONFIG.photoFolderId).createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
   const sheet = sheet_(CONFIG.sheets.products);
   const values = sheet.getDataRange().getValues();
@@ -212,18 +485,93 @@ function uploadProductPhoto_(body) {
   const rowIndex = findRowByValue_(values, headers['idArticulos'], String(body.productId));
   if (rowIndex < 1) throw new Error('Artículo inexistente');
   const relativePath = 'Articulos_Images/' + fileName;
-  sheet.getRange(rowIndex + 1, headers['Foto'] + 1).setValue(relativePath);
+  const slot = Math.max(1, Math.min(3, Math.floor(Number(body.slot || 1))));
+  const photoHeader = slot === 1 ? 'Foto' : 'Foto_' + slot;
+  sheet.getRange(rowIndex + 1, headers[photoHeader] + 1).setValue(relativePath);
+  const urlHeader = slot === 1 ? 'Foto URL' : 'Foto URL_' + slot;
+  sheet.getRange(rowIndex + 1, headers[urlHeader] + 1)
+    .setValue('https://drive.google.com/uc?export=view&id=' + file.getId());
+  SpreadsheetApp.flush();
   return { ok: true, path: relativePath };
 }
 
+function getProductPhoto_(productId, requestedSlot) {
+  ensureProductColumns_();
+  if (!productId) throw new Error('Falta el artículo');
+  const sheet = sheet_(CONFIG.sheets.products);
+  const values = sheet.getDataRange().getValues();
+  const headers = headerMap_(values[0]);
+  const rowIndex = findRowByValue_(values, headers['idArticulos'], String(productId));
+  if (rowIndex < 1) throw new Error('Artículo inexistente');
+  const slot = Math.max(1, Math.min(3, Math.floor(Number(requestedSlot || 1))));
+  const photoHeader = slot === 1 ? 'Foto' : 'Foto_' + slot;
+  const path = String(values[rowIndex][headers[photoHeader]] || '');
+  const fileName = path.split('/').pop();
+  if (!fileName) throw new Error('El artículo no tiene foto');
+  const files = DriveApp.getFolderById(CONFIG.photoFolderId).getFilesByName(fileName);
+  if (!files.hasNext()) throw new Error('No se encontró la foto');
+  const blob = files.next().getBlob();
+  return {
+    ok: true,
+    mimeType: blob.getContentType(),
+    base64: Utilities.base64Encode(blob.getBytes())
+  };
+}
+
 function ensureColumns_() {
+  ensureProductColumns_();
   ensureHeaders_(sheet_(CONFIG.sheets.sales), [
-    'idVenta', 'Fecha', 'idClientes', 'Vendedor', 'Total',
-    'Medios de pago', 'Pagos JSON', 'Estado', 'requestId'
+    'idVenta', 'Fecha', 'Mes', 'idClientes', 'Vendedor', 'Total',
+    'Medios de pago', 'Pagos JSON', 'Estado', 'requestId',
+    'Cliente Nombre', 'Cliente Teléfono', 'Garantía Días'
   ]);
   ensureHeaders_(sheet_(CONFIG.sheets.details), [
-    'idDetalle', 'idVenta', 'idArticulos', 'Cantidad', 'Precio Unitario', 'Total'
+    'idDetalle', 'idVenta', 'idArticulos', 'Cantidad', 'Precio Original',
+    'Precio Unitario', 'Diferencia', 'Total'
   ]);
+}
+
+function ensureProductColumns_() {
+  ensureHeaders_(sheet_(CONFIG.sheets.products), [
+    'Tipo', 'Marca', 'Modelos Compatibles', 'Color', 'Proveedor', 'Calidad',
+    'Garantía Repuesto', 'IMEI', 'Memoria', 'Condición', 'Batería',
+    'Observaciones', 'Estado Equipo', 'Reserva Cliente', 'Reserva Teléfono',
+    'Reserva Seña', 'Reserva Fecha', 'Reserva Vencimiento', 'Costo', 'Foto_2', 'Foto_3',
+    'Foto URL', 'Foto URL_2', 'Foto URL_3'
+  ]);
+}
+
+/**
+ * Ejecutar una sola vez después de instalar esta versión. Publica únicamente
+ * las fotos de productos existentes y completa sus URL para la web.
+ */
+function prepararFotosWeb() {
+  ensureProductColumns_();
+  const sheet = sheet_(CONFIG.sheets.products);
+  const values = sheet.getDataRange().getDisplayValues();
+  if (values.length < 2) return 0;
+  const headers = headerMap_(values[0]);
+  const folder = DriveApp.getFolderById(CONFIG.photoFolderId);
+  let updated = 0;
+  for (let row = 1; row < values.length; row++) {
+    for (let slot = 1; slot <= 3; slot++) {
+      const photoHeader = slot === 1 ? 'Foto' : 'Foto_' + slot;
+      const urlHeader = slot === 1 ? 'Foto URL' : 'Foto URL_' + slot;
+      if (cell_(values[row], headers, urlHeader)) continue;
+      const path = String(cell_(values[row], headers, photoHeader) || '');
+      const fileName = path.substring(path.lastIndexOf('/') + 1);
+      if (!fileName) continue;
+      const files = folder.getFilesByName(fileName);
+      if (!files.hasNext()) continue;
+      const file = files.next();
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      sheet.getRange(row + 1, headers[urlHeader] + 1)
+        .setValue('https://drive.google.com/uc?export=view&id=' + file.getId());
+      updated++;
+    }
+  }
+  SpreadsheetApp.flush();
+  return updated;
 }
 
 function ensureHeaders_(sheet, required) {
