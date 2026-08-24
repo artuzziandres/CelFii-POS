@@ -18,3 +18,19 @@ android {
 
     buildFeatures { buildConfig = true }
 
+    buildTypes {
+        release { isMinifyEnabled = false }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    sourceSets["main"].java.exclude("com/celfii/pos/**")
+
+}
+
+dependencies {
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+}
