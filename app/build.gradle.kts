@@ -27,6 +27,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    sourceSets["main"].java.exclude("com/celfii/pos/**")
+
 }
 
 dependencies {

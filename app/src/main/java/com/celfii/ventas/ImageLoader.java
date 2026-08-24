@@ -19,7 +19,7 @@ final class ImageLoader {
     };
 
     void load(ImageView view, String url) {
-        view.setImageResource(R.drawable.logo_celfii);
+        view.setImageResource(R.drawable.logo_celfii_app);
         view.setTag(url);
         if (url == null || url.isEmpty()) return;
         Bitmap saved = cache.get(url);
@@ -54,7 +54,7 @@ final class ImageLoader {
             load(view, url);
             return;
         }
-        view.setImageResource(R.drawable.logo_celfii);
+        view.setImageResource(R.drawable.logo_celfii_app);
         view.setTag(url);
         Bitmap saved = cache.get(url);
         if (saved != null) { view.setImageBitmap(saved); return; }
