@@ -1,10 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="celfii_bg">#090B0A</color>
-    <color name="celfii_panel">#111412</color>
-    <color name="celfii_lime">#AAFF00</color>
-    <color name="celfii_text">#F5F7F5</color>
-    <color name="celfii_muted">#9DA59F</color>
-    <color name="celfii_line">#283029</color>
-    <color name="celfii_error">#FF6B6B</color>
+    <color name="black">#090B0A</color>
+    <color name="lime">#AAFF00</color>
+    <color name="white">#F5F7F5</color>
+    <color name="panel">#151916</color>
+    <color name="muted">#9DA59F</color>
 </resources>

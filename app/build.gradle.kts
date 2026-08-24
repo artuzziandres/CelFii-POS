@@ -1,41 +1,34 @@
-plugins {
-    id("com.android.application")
-}
+plugins { id("com.android.application") }
 
-val apiUrl = providers.gradleProperty("CELFII_API_URL").orElse("")
-val apiToken = providers.gradleProperty("CELFII_API_TOKEN").orElse("")
+// Versión con historial mensual sincronizado entre todos los dispositivos.
 
 android {
-    namespace = "com.celfii.pos"
+    namespace = "com.celfii.ventas"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.celfii.pos"
+        applicationId = "com.celfii.ventas"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
-
-        buildConfigField("String", "CELFII_API_URL", "\"${apiUrl.get()}\"")
-        buildConfigField("String", "CELFII_API_TOKEN", "\"${apiToken.get()}\"")
+        versionCode = 30
+        versionName = "0.9.0"
+        buildConfigField("String", "CELFII_API_URL",
+            "\"https://script.google.com/macros/s/AKfycbxfd_84OPqT-tTF_ZhO6zBYjGGiGDLsk_XoTffD1NMugaXbhltSUZ-YfncredvgSCBI/exec\"")
     }
 
-    buildFeatures {
-        buildConfig = true
-    }
+    buildFeatures { buildConfig = true }
 
     buildTypes {
-        release {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
+        release { isMinifyEnabled = false }
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+}
+
+dependencies {
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 }
