@@ -5,4 +5,7 @@
     <color name="white">#F5F7F5</color>
     <color name="panel">#151916</color>
     <color name="muted">#9DA59F</color>
+    <color name="celfii_lime">#AAFF00</color>
+    <color name="celfii_panel">#151916</color>
+    <color name="celfii_line">#344036</color>
 </resources>
