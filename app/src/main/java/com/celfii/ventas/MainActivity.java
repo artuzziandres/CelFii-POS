@@ -1206,24 +1206,42 @@ public final class MainActivity extends Activity {
     }
 
     private void showDeleteProduct(Product product, AlertDialog editor) {
-        String[] reasons = {"Carga incorrecta", "Producto duplicado", "Producto vendido",
-                "Producto discontinuado", "Otro motivo"};
-        new AlertDialog.Builder(this).setTitle("Eliminar " + product.name)
-                .setMessage("Se quitará de la APK y de la página web. Esta acción no modifica ventas anteriores.")
-                .setItems(reasons, (dialog, which) -> new AlertDialog.Builder(this)
-                        .setTitle("Confirmación final").setMessage("Motivo: " + reasons[which])
-                        .setNegativeButton("Volver", null)
-                        .setPositiveButton("ELIMINAR", (d, w) ->
-                                api.deleteProduct(product.id, reasons[which], new CelFiiApi.Callback<>() {
-                                    @Override public void success(String value) { runOnUiThread(() -> {
-                                        if (editor != null) editor.dismiss();
-                                        toast("Producto eliminado"); synchronize(false);
-                                        showProducts();
-                                    }); }
-                                    @Override public void error(String message) { runOnUiThread(() ->
-                                            toast("No se pudo eliminar: " + message)); }
-                                })).show())
-                .setNegativeButton("Cancelar", null).show();
+        AlertDialog confirmation = new AlertDialog.Builder(this)
+                .setTitle("Eliminar producto")
+                .setMessage("¿Querés eliminar definitivamente “" + product.name
+                        + "”?\n\nSe quitará de la APK y de la página web. Las ventas anteriores no se modificarán.")
+                .setNegativeButton("CANCELAR", null)
+                .setPositiveButton("ELIMINAR DEFINITIVAMENTE", null)
+                .create();
+        confirmation.setOnShowListener(value -> {
+            Button remove = confirmation.getButton(AlertDialog.BUTTON_POSITIVE);
+            remove.setTextColor(RED);
+            remove.setOnClickListener(view -> {
+                remove.setEnabled(false);
+                remove.setText("ELIMINANDO…");
+                api.deleteProduct(product.id, "Eliminado desde APK",
+                        new CelFiiApi.Callback<>() {
+                            @Override public void success(String productId) {
+                                runOnUiThread(() -> {
+                                    confirmation.dismiss();
+                                    if (editor != null) editor.dismiss();
+                                    catalog.removeIf(item -> item.id.equals(productId));
+                                    toast("Producto eliminado correctamente");
+                                    showProducts();
+                                    synchronize(false);
+                                });
+                            }
+                            @Override public void error(String message) {
+                                runOnUiThread(() -> {
+                                    remove.setEnabled(true);
+                                    remove.setText("ELIMINAR DEFINITIVAMENTE");
+                                    toast("No se pudo eliminar: " + message);
+                                });
+                            }
+                        });
+            });
+        });
+        confirmation.show();
     }
 
     private void saveProduct(Product value, int initialStock, boolean creating, AlertDialog dialog) {
