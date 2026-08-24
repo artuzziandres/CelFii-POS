@@ -488,7 +488,7 @@ public final class MainActivity extends Activity {
         String needle = query == null ? "" : query.trim().toLowerCase();
         List<Product> result = new ArrayList<>();
         for (Product product : catalog) {
-            if (product.isSold()) continue;
+            if (product.isUnavailableEquipment()) continue;
             if (!matchesTypeFilter(product)) continue;
             if (!productsTab && needle.isEmpty() && product.stock <= 0) continue;
             if (needle.isEmpty() || product.searchable().contains(needle)) result.add(product);
@@ -666,13 +666,18 @@ public final class MainActivity extends Activity {
         for (CartLine line : cart.values()) if (line.product.isEquipment()) hasEquipment = true;
         EditText customerName = editorInput("Comprador (opcional)", "", false);
         EditText customerPhone = editorInput("Teléfono (opcional)", "", false);
-        Spinner warranty = new Spinner(this);
-        warranty.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
-                new String[]{"Sin garantía", "30 días", "60 días", "90 días"}));
+        int automaticWarrantyDays = 0;
+        for (CartLine line : cart.values()) if (line.product.isEquipment()) {
+            automaticWarrantyDays = Math.max(automaticWarrantyDays,
+                    "Nuevo".equalsIgnoreCase(line.product.condition) ? 180 : 90);
+        }
+        final int warrantyDays = automaticWarrantyDays;
         if (hasEquipment) {
             box.addView(customerName); box.addView(customerPhone);
-            TextView warrantyLabel = label("Garantía", 12, MUTED, true);
-            warrantyLabel.setPadding(0, dp(10), 0, 0); box.addView(warrantyLabel); box.addView(warranty);
+            TextView warrantyLabel = label("Garantía incluida: "
+                    + (warrantyDays == 180 ? "6 meses" : "3 meses"), 12, LIME, true);
+            warrantyLabel.setPadding(0, dp(12), 0, 0);
+            box.addView(warrantyLabel);
         }
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Finalizar venta · " + money(cartTotal())).setView(box)
@@ -684,14 +689,14 @@ public final class MainActivity extends Activity {
                 String method = String.valueOf(methods.getSelectedItem());
                 selectedSeller = String.valueOf(sellerSpinner.getSelectedItem());
                 saveSale(method, customerName.getText().toString().trim(),
-                        customerPhone.getText().toString().trim(), warranty.getSelectedItemPosition() * 30, true);
+                        customerPhone.getText().toString().trim(), warrantyDays, true);
                 dialog.dismiss();
             });
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
                     String method = String.valueOf(methods.getSelectedItem());
                     selectedSeller = String.valueOf(sellerSpinner.getSelectedItem());
                     saveSale(method, customerName.getText().toString().trim(),
-                            customerPhone.getText().toString().trim(), warranty.getSelectedItemPosition() * 30, false);
+                            customerPhone.getText().toString().trim(), warrantyDays, false);
                     dialog.dismiss();
                 });
         });
@@ -754,6 +759,7 @@ public final class MainActivity extends Activity {
         saleStore.add(id, date, cartTotal(), payment, itemCount(), details, selectedSeller);
         if (printAfterSave) printCurrentSale();
         toast(printAfterSave ? "Venta guardada. Enviando ticket…" : "Venta guardada");
+        catalog.removeIf(product -> product.isEquipment() && cart.containsKey(product.id));
         finishCompletedSale();
         synchronize(false);
     }

@@ -87,6 +87,9 @@ final class Product {
     boolean isEquipment() { return "Equipo".equalsIgnoreCase(type); }
     boolean isSold() { return isEquipment() && "Vendido".equalsIgnoreCase(equipmentStatus); }
     boolean isReserved() { return isEquipment() && "Reservado".equalsIgnoreCase(equipmentStatus); }
+    boolean isUnavailableEquipment() {
+        return isEquipment() && (stock <= 0 || isSold());
+    }
 
     Product withReservation(String status, String customer, String phone, double deposit,
                             String date, String expiry) {
