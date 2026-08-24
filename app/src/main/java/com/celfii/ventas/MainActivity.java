@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.content.pm.PackageManager;
@@ -26,6 +27,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.ImageButton;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ScrollView;
@@ -124,9 +126,11 @@ public final class MainActivity extends Activity {
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(14), dp(8), dp(14), dp(8));
         ImageView logo = new ImageView(this);
-        logo.setImageResource(R.drawable.logo_celfii_app);
-        logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        header.addView(logo, new LinearLayout.LayoutParams(dp(58), dp(58)));
+        logo.setImageResource(R.drawable.logo_celfii);
+        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        logo.setBackground(rounded(PANEL, LIME, 1, 14));
+        logo.setPadding(dp(4), dp(4), dp(4), dp(4));
+        header.addView(logo, new LinearLayout.LayoutParams(dp(62), dp(62)));
         LinearLayout brand = column();
         brand.setPadding(dp(10), 0, 0, 0);
         brand.addView(label("CEL-FII", 24, LIME, true));
@@ -170,6 +174,7 @@ public final class MainActivity extends Activity {
                 : catalog.size() + " productos disponibles", 12, MUTED, false);
         hint.setPadding(0, 0, 0, dp(8));
         page.addView(hint);
+        addConnectionNotice(page);
         page.addView(typeFilter());
         page.addView(searchBox());
         ListView list = productList();
@@ -212,6 +217,7 @@ public final class MainActivity extends Activity {
                 12, MUTED, false);
         hint.setPadding(0, 0, 0, dp(8));
         page.addView(hint);
+        addConnectionNotice(page);
         page.addView(typeFilter());
         page.addView(searchBox());
         page.addView(productList(), new LinearLayout.LayoutParams(-1, 0, 1));
@@ -357,24 +363,50 @@ public final class MainActivity extends Activity {
     }
 
     private View typeFilter() {
-        Spinner spinner = new Spinner(this);
-        spinner.setAdapter(new ArrayAdapter<>(this,
-                android.R.layout.simple_spinner_dropdown_item, PRODUCT_TYPES));
-        for (int i = 0; i < PRODUCT_TYPES.length; i++) {
-            if (PRODUCT_TYPES[i].equals(selectedTypeFilter)) spinner.setSelection(i);
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout chips = row();
+        chips.setPadding(0, dp(2), dp(6), dp(2));
+        for (String type : PRODUCT_TYPES) {
+            boolean selected = type.equals(selectedTypeFilter);
+            Button chip = new Button(this);
+            chip.setAllCaps(false);
+            chip.setText(type);
+            chip.setTextSize(12);
+            chip.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            chip.setTextColor(selected ? BLACK : LIME);
+            chip.setBackground(rounded(selected ? LIME : PANEL, LIME, 1, 22));
+            chip.setPadding(dp(18), 0, dp(18), 0);
+            chip.setOnClickListener(v -> {
+                selectedTypeFilter = type;
+                refreshCurrentCatalogPage();
+            });
+            LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(-2, dp(44));
+            chipParams.rightMargin = dp(7);
+            chips.addView(chip, chipParams);
         }
-        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(AdapterView<?> parent, View view,
-                                                  int position, long id) {
-                selectedTypeFilter = PRODUCT_TYPES[position];
-                filterProducts(activeSearch == null ? "" : activeSearch.getText().toString());
-            }
-            @Override public void onNothingSelected(AdapterView<?> parent) { }
-        });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(48));
+        scroll.addView(chips);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(50));
         params.bottomMargin = dp(7);
-        spinner.setLayoutParams(params);
-        return spinner;
+        scroll.setLayoutParams(params);
+        return scroll;
+    }
+
+    private void refreshCurrentCatalogPage() {
+        if (productsTab) showProducts(); else showSale();
+    }
+
+    private void addConnectionNotice(LinearLayout page) {
+        if (api.configured()) return;
+        Button connect = actionButton("CONECTAR STOCK REAL", true);
+        connect.setOnClickListener(v -> showConnectionSetup());
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(48));
+        params.bottomMargin = dp(8);
+        page.addView(connect, params);
+        TextView warning = label("Mostrando la última copia guardada. Conectá Apps Script para cargar, editar o eliminar.",
+                11, RED, false);
+        warning.setPadding(0, 0, 0, dp(8));
+        page.addView(warning);
     }
 
     private void scanBarcode(EditText destination) {
@@ -443,6 +475,11 @@ public final class MainActivity extends Activity {
             Product product = activeAdapter.getItem(position);
             if (productsTab) showProduct(product); else addProduct(product);
         });
+        list.setOnItemLongClickListener((parent, view, position, id) -> {
+            if (!productsTab) return false;
+            showDeleteProduct(activeAdapter.getItem(position), null);
+            return true;
+        });
         return list;
     }
 
@@ -487,7 +524,8 @@ public final class MainActivity extends Activity {
                 }
                 @Override public void error(String message) {
                     runOnUiThread(() -> {
-                        if (announce) toast("Conector: " + message + ". Usando copia local.");
+                        if (announce) toast("No se pudo actualizar: " + message
+                                + ". Revisá la conexión en MÁS. Se mantiene la copia guardada.");
                         loadFallbackCatalog(announce);
                     });
                 }
@@ -966,12 +1004,9 @@ public final class MainActivity extends Activity {
         AlertDialog.Builder builder = new AlertDialog.Builder(this).setTitle(product.name)
                 .setMessage(details)
                 .setPositiveButton("Editar", (dialog, which) -> showProductEditor(product));
-        if (product.isEquipment()) {
-            builder.setNegativeButton("Agregar a venta", (d, w) -> addProduct(product));
-            builder.setNeutralButton(product.isReserved() ? "Cancelar reserva" : "Reservar",
-                    (d, w) -> { if (product.isReserved()) cancelReservation(product);
-                        else showReservation(product); });
-        } else builder.setNegativeButton("Cerrar", null);
+        builder.setNegativeButton("Eliminar", (d, w) -> showDeleteProduct(product, null));
+        if (product.isEquipment())
+            builder.setNeutralButton("Agregar a venta", (d, w) -> addProduct(product));
         builder.show();
     }
 
@@ -1181,7 +1216,8 @@ public final class MainActivity extends Activity {
                         .setPositiveButton("ELIMINAR", (d, w) ->
                                 api.deleteProduct(product.id, reasons[which], new CelFiiApi.Callback<>() {
                                     @Override public void success(String value) { runOnUiThread(() -> {
-                                        editor.dismiss(); toast("Producto eliminado"); synchronize(false);
+                                        if (editor != null) editor.dismiss();
+                                        toast("Producto eliminado"); synchronize(false);
                                         showProducts();
                                     }); }
                                     @Override public void error(String message) { runOnUiThread(() ->
@@ -1366,8 +1402,16 @@ public final class MainActivity extends Activity {
         button.setTextSize(11);
         button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         button.setTextColor(primary ? BLACK : LIME);
-        button.setBackgroundColor(primary ? LIME : PANEL);
+        button.setBackground(rounded(primary ? LIME : PANEL, LIME, primary ? 0 : 1, 12));
         return button;
+    }
+
+    private GradientDrawable rounded(int fill, int stroke, int strokeWidth, int radius) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(fill);
+        shape.setCornerRadius(dp(radius));
+        if (strokeWidth > 0) shape.setStroke(dp(strokeWidth), stroke);
+        return shape;
     }
 
     private TextView label(String text, int size, int color, boolean bold) {
