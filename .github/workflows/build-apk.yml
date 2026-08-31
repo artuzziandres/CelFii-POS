@@ -22,6 +22,13 @@ jobs:
         env:
           CELFII_WEB_URL: "${{ inputs.web_url || vars.CELFII_WEB_URL || 'https://script.google.com/macros/s/AKfycbzIVmExrNsKCTczuZ9oi-ZvN7pGbUeVFOCh1_gnTKUiFlYlcvq-dnsY2nGccDHkOmvUUw/exec' }}"
         run: gradle assembleDebug -PCELFII_WEB_URL="$CELFII_WEB_URL"
+      - name: Preparar APK para entrega directa
+        working-directory: android
+        run: |
+          echo APK_BASE64_START
+          base64 -w 0 app/build/outputs/apk/debug/app-debug.apk
+          echo
+          echo APK_BASE64_END
       - uses: actions/upload-artifact@v4
         with:
           name: CelFii-Ventas-Remaster-1.0.0
