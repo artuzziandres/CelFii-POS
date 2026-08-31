@@ -1,41 +1,35 @@
-name: Compilar APK
-
+name: Compilar APK Remaster
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
+    inputs:
+      web_url:
+        description: URL /exec del despliegue de Apps Script
+        required: true
   pull_request:
     branches: [main]
-
-permissions:
-  contents: read
-
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
     steps:
-      - name: Descargar proyecto
-        uses: actions/checkout@v4
-
-      - name: Preparar Java
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.11.1'}
+      - name: Compilar APK
+        working-directory: android
+        env:
+          CELFII_WEB_URL: "${{ inputs.web_url || vars.CELFII_WEB_URL || 'https://script.google.com/macros/s/AKfycbzIVmExrNsKCTczuZ9oi-ZvN7pGbUeVFOCh1_gnTKUiFlYlcvq-dnsY2nGccDHkOmvUUw/exec' }}"
+        run: gradle assembleDebug -PCELFII_WEB_URL="$CELFII_WEB_URL"
+      - name: Preparar APK para entrega directa
+        working-directory: android
+        run: |
+          echo APK_BASE64_START
+          base64 -w 0 app/build/outputs/apk/debug/app-debug.apk
+          echo
+          echo APK_BASE64_END
+      - uses: actions/upload-artifact@v4
         with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Preparar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.13"
-
-      - name: Compilar APK de prueba
-        run: gradle :app:assembleDebug --stacktrace
-
-      - name: Guardar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: CelFii-POS-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          name: CelFii-Ventas-Remaster-1.0.0
+          path: android/app/build/outputs/apk/debug/app-debug.apk
