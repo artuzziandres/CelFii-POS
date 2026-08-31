@@ -19,7 +19,9 @@ jobs:
         with: {gradle-version: '8.11.1'}
       - name: Compilar APK
         working-directory: android
-        run: gradle assembleDebug -PCELFII_WEB_URL='${{ inputs.web_url || vars.CELFII_WEB_URL || 'https://script.google.com/macros/s/AKfycbzIVmExrNsKCTczuZ9oi-ZvN7pGbUeVFOCh1_gnTKUiFlYlcvq-dnsY2nGccDHkOmvUUw/exec' }}'
+        env:
+          CELFII_WEB_URL: "${{ inputs.web_url || vars.CELFII_WEB_URL || 'https://script.google.com/macros/s/AKfycbzIVmExrNsKCTczuZ9oi-ZvN7pGbUeVFOCh1_gnTKUiFlYlcvq-dnsY2nGccDHkOmvUUw/exec' }}"
+        run: gradle assembleDebug -PCELFII_WEB_URL="$CELFII_WEB_URL"
       - uses: actions/upload-artifact@v4
         with:
           name: CelFii-Ventas-Remaster-1.0.0
