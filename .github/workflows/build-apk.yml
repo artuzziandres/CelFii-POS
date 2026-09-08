@@ -3,7 +3,7 @@ name: Compilar APK
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, improve/celfii-ventas-0.9.1]
   pull_request:
     branches: [main]
 
@@ -36,6 +36,6 @@ jobs:
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CelFii-POS-APK
+          name: CelFii-Ventas-0.9.4
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

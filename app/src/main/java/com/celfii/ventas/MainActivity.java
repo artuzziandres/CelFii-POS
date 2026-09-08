@@ -64,6 +64,7 @@ public final class MainActivity extends Activity {
 
     private LinearLayout content;
     private TextView syncStatus;
+    private TextView productCount;
     private final List<Product> catalog = new ArrayList<>();
     private final Map<String, CartLine> cart = new LinkedHashMap<>();
     private CatalogRepository catalogRepository;
@@ -174,6 +175,7 @@ public final class MainActivity extends Activity {
                 : catalog.size() + " productos disponibles", 12, MUTED, false);
         hint.setPadding(0, 0, 0, dp(8));
         page.addView(hint);
+        productCount = hint;
         addConnectionNotice(page);
         page.addView(typeFilter());
         page.addView(searchBox());
@@ -217,6 +219,7 @@ public final class MainActivity extends Activity {
                 12, MUTED, false);
         hint.setPadding(0, 0, 0, dp(8));
         page.addView(hint);
+        productCount = hint;
         addConnectionNotice(page);
         page.addView(typeFilter());
         page.addView(searchBox());
@@ -485,15 +488,17 @@ public final class MainActivity extends Activity {
 
     private void filterProducts(String query) {
         if (activeAdapter == null) return;
-        String needle = query == null ? "" : query.trim().toLowerCase();
+        String needle = query == null ? "" : Product.normalizeSearch(query.trim());
         List<Product> result = new ArrayList<>();
         for (Product product : catalog) {
-            if (product.isUnavailableEquipment()) continue;
+            if (!productsTab && product.isUnavailableEquipment()) continue;
             if (!matchesTypeFilter(product)) continue;
             if (!productsTab && needle.isEmpty() && product.stock <= 0) continue;
-            if (needle.isEmpty() || product.searchable().contains(needle)) result.add(product);
-            if (result.size() == 120) break;
+            if (needle.isEmpty() || product.normalizedSearch().contains(needle)) result.add(product);
+
         }
+        if (productsTab && productCount != null) productCount.setText(
+                result.size() + " de " + catalog.size() + " artículos");
         activeAdapter.setItems(result);
     }
 
@@ -551,8 +556,8 @@ public final class MainActivity extends Activity {
     private void applyCatalog(List<Product> products, boolean fromCache, boolean announce) {
         catalog.clear();
         catalog.addAll(products);
-        syncStatus.setText("● " + products.size() + " PRODUCTOS");
-        syncStatus.setTextColor(LIME);
+        syncStatus.setText("● " + products.size() + (fromCache ? " · COPIA GUARDADA" : " PRODUCTOS"));
+        syncStatus.setTextColor(fromCache ? MUTED : LIME);
         if (activeSearch != null) filterProducts(activeSearch.getText().toString());
         int expired = countExpiredReservations();
         if (expired > 0) toast("Hay " + expired + " reserva(s) vencida(s) para revisar");
@@ -573,6 +578,7 @@ public final class MainActivity extends Activity {
     }
 
     private void addProduct(Product product) {
+        if (saleSaving) { toast("Esperá a que termine de guardarse la venta"); return; }
         if (product.stock <= 0) { toast("Producto sin stock"); return; }
         CartLine line = cart.get(product.id);
         if (line == null) cart.put(product.id, new CartLine(product));
@@ -607,6 +613,7 @@ public final class MainActivity extends Activity {
     }
 
     private void changeCartPrice(CartLine line) {
+        if (saleSaving) { toast("La venta se está guardando"); return; }
         EditText value = editorInput("Precio final", plainNumber(line.unitPrice), true);
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle(line.product.name)
                 .setView(value).setNegativeButton("Cancelar", null)
@@ -650,8 +657,9 @@ public final class MainActivity extends Activity {
         box.setPadding(dp(18), dp(5), dp(18), 0);
         Spinner methods = new Spinner(this);
         methods.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
-                new String[]{"Efectivo", "Transferencia", "Posnet"}));
+                new String[]{"Efectivo", "Transferencia", "Débito", "Crédito / Posnet", "Mercado Pago"}));
         box.addView(methods);
+        box.addView(label("Total a cobrar: " + money(cartTotal()) + " · Revisá el precio final del ticket antes de confirmar.", 13, LIME, true));
         TextView sellerLabel = label("Vendedor", 12, MUTED, true);
         sellerLabel.setPadding(0, dp(12), 0, dp(4));
         box.addView(sellerLabel);
@@ -748,7 +756,7 @@ public final class MainActivity extends Activity {
             @Override public void error(String message) {
                 runOnUiThread(() -> {
                     saleSaving = false;
-                    toast("No se guardó la venta: " + message);
+                    toast("No pudimos confirmar el resultado: " + message + ". Reintentá la misma venta; conservará su identificador.");
                 });
             }
         });
@@ -1092,9 +1100,11 @@ public final class MainActivity extends Activity {
         if (!api.configured()) { toast("Falta configurar Google Sheets"); return; }
         for (int i = 0; i < 3; i++) { pendingProductPhotos[i] = null; pendingPhotoPreviews[i] = null; }
         final boolean equipment = "Equipo".equalsIgnoreCase(selectedType);
+        final boolean replacement = "Repuesto".equalsIgnoreCase(selectedType);
         LinearLayout form = column();
         form.setPadding(dp(18), dp(4), dp(18), dp(8));
-        int photoCount = equipment ? 3 : 1;
+        form.addView(label("* Obligatorio · Foto principal y datos del producto", 13, LIME, true));
+        int photoCount = 3;
         for (int slot = 0; slot < photoCount; slot++) {
             final int selectedSlot = slot;
             ImageView preview = new ImageView(this);
@@ -1106,7 +1116,7 @@ public final class MainActivity extends Activity {
                 loadProductPhoto(preview, existing, current.id, slot + 1);
             else preview.setImageResource(R.drawable.logo_celfii_app);
             form.addView(preview, new LinearLayout.LayoutParams(-1, dp(120)));
-            Button photo = actionButton("ELEGIR FOTO " + (slot + 1), false);
+            Button photo = actionButton((slot == 0 ? "FOTO PRINCIPAL *" : "FOTO " + (slot + 1) + " · OPCIONAL"), false);
             photo.setOnClickListener(v -> chooseProductPhoto(selectedSlot));
             form.addView(photo, new LinearLayout.LayoutParams(-1, dp(46)));
         }
@@ -1154,16 +1164,39 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams codeRowParams = new LinearLayout.LayoutParams(-1, dp(52));
         codeRowParams.topMargin = dp(7);
         codeRow.setLayoutParams(codeRowParams);
-        form.addView(name); form.addView(category); form.addView(cash); form.addView(card);
-        form.addView(stock); form.addView(brand);
+        category.setHint("Categoría *");
+        description.setHint(equipment ? "Características del equipo *" : replacement
+                ? "Características del repuesto *" : "Características del accesorio *");
+        form.addView(name);
+        if (!equipment) form.addView(category);
+        form.addView(cash);
+        if (!equipment) form.addView(stock);
+        form.addView(description);
+        LinearLayout optional = column(); optional.setVisibility(View.GONE);
         if (equipment) {
-            form.addView(memory); form.addView(color); form.addView(condition); form.addView(battery);
-            form.addView(imei); form.addView(observations); form.addView(description); form.addView(cost);
+            brand.setHint("Marca *"); memory.setHint("Memoria / capacidad *"); color.setHint("Color *");
+            battery.setHint("Batería % · obligatoria en iPhone usado");
+            form.addView(brand); form.addView(memory); form.addView(color);
+            form.addView(label("Condición *", 13, MUTED, true)); form.addView(condition); form.addView(battery);
+            optional.addView(imei); optional.addView(observations); optional.addView(supplier);
+        } else if (replacement) {
+            compatible.setHint("Modelos compatibles *"); quality.setHint("Calidad / original o alternativo *");
+            form.addView(compatible); form.addView(quality);
+            optional.addView(brand); optional.addView(color); optional.addView(replacementWarranty);
+            optional.addView(supplier); optional.addView(codeRow); optional.addView(backup);
         } else {
-            form.addView(compatible); form.addView(color); form.addView(supplier);
-            if ("Repuesto".equalsIgnoreCase(selectedType)) { form.addView(quality); form.addView(replacementWarranty); }
-            form.addView(codeRow); form.addView(backup); form.addView(description); form.addView(cost);
+            optional.addView(brand); optional.addView(compatible); optional.addView(color);
+            optional.addView(supplier); optional.addView(codeRow); optional.addView(backup);
         }
+        card.setVisibility(View.VISIBLE);
+        optional.addView(card); optional.addView(cost);
+        Button optionalToggle = actionButton("DATOS OPCIONALES +", false);
+        optionalToggle.setOnClickListener(v -> {
+            boolean open = optional.getVisibility() == View.GONE;
+            optional.setVisibility(open ? View.VISIBLE : View.GONE);
+            optionalToggle.setText(open ? "OCULTAR DATOS OPCIONALES −" : "DATOS OPCIONALES +");
+        });
+        form.addView(optionalToggle); form.addView(optional);
         final Button deleteProduct = current == null ? null : actionButton("ELIMINAR PRODUCTO", false);
         if (deleteProduct != null) {
             deleteProduct.setTextColor(RED);
@@ -1174,7 +1207,7 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.addView(form);
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle(current == null ? "Nuevo producto" : "Editar producto")
+                .setTitle((current == null ? "Alta · " : "Editar · ") + selectedType)
                 .setView(scroll).setNegativeButton("Cancelar", null)
                 .setPositiveButton("Guardar", null).create();
         dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
@@ -1182,8 +1215,26 @@ public final class MainActivity extends Activity {
                     if (name.getText().toString().trim().isEmpty()) {
                         toast("Ingresá el nombre del producto"); return;
                     }
+                    if (pendingProductPhotos[0] == null && (current == null ||
+                            ((current.photo == null || current.photo.trim().isEmpty()) &&
+                             (current.photoUrl == null || current.photoUrl.trim().isEmpty())))) {
+                        toast("Agregá la foto principal del producto"); return;
+                    }
+                    EditText[] requiredFields = equipment ? new EditText[]{brand, memory, color, description}
+                            : replacement ? new EditText[]{category, compatible, quality, description}
+                            : new EditText[]{category, description};
+                    for (EditText field : requiredFields) if (field.getText().toString().trim().isEmpty()) {
+                        field.setError("Obligatorio"); field.requestFocus(); toast("Completá " + field.getHint()); return;
+                    }
+                    if (equipment && "Usado".equals(String.valueOf(condition.getSelectedItem())) &&
+                            (name.getText().toString().toLowerCase(Locale.ROOT).contains("iphone"))) {
+                        String batteryValue = battery.getText().toString().trim().replace("%", "");
+                        try { int percent = Integer.parseInt(batteryValue);
+                            if (percent < 1 || percent > 100) throw new NumberFormatException();
+                        } catch (NumberFormatException error) { battery.setError("Ingresá un porcentaje entre 1 y 100"); battery.requestFocus(); return; }
+                    }
                     if (decimal(cash) <= 0) { toast("Ingresá el precio"); return; }
-                    if (!equipment && integer(stock) <= 0 && current == null) { toast("Ingresá el stock"); return; }
+                    if (!equipment && current == null && (stock.getText().toString().trim().isEmpty() || decimal(stock) < 0 || decimal(stock) != integer(stock))) { toast("Ingresá un stock entero, cero o mayor"); return; }
                     Product value = new Product(current == null ? "" : current.id,
                             name.getText().toString().trim(), equipment ? "Equipos" : category.getText().toString().trim(),
                             decimal(cash), decimal(card), current == null ? integer(stock) : current.stock,
@@ -1369,25 +1420,39 @@ public final class MainActivity extends Activity {
         @Override public long getItemId(int position) { return position; }
         @Override public View getView(int position, View recycled, ViewGroup parent) {
             Product product = getItem(position);
-            LinearLayout card = panel();
-            ImageView image = new ImageView(MainActivity.this);
-            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            imageLoader.load(image, photoMap.urlFor(product), api);
-            card.addView(image, new LinearLayout.LayoutParams(dp(58), dp(58)));
-            LinearLayout copy = column();
-            copy.setPadding(dp(10), 0, dp(5), 0);
-            TextView name = label(product.name, 14, WHITE, true);
-            name.setMaxLines(2);
-            copy.addView(name);
-            String subtitle = product.type + (product.isEquipment()
+            LinearLayout card;
+            ImageView image;
+            TextView name, subtitleView, priceView, action;
+            if (recycled instanceof LinearLayout && recycled.getTag() instanceof Object[]) {
+                card = (LinearLayout) recycled;
+                Object[] holder = (Object[]) card.getTag();
+                image = (ImageView) holder[0]; name = (TextView) holder[1];
+                subtitleView = (TextView) holder[2]; priceView = (TextView) holder[3];
+                action = (TextView) holder[4];
+            } else {
+                card = panel();
+                image = new ImageView(MainActivity.this);
+                image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                card.addView(image, new LinearLayout.LayoutParams(dp(58), dp(58)));
+                LinearLayout copy = column(); copy.setPadding(dp(10), 0, dp(5), 0);
+                name = label("", 14, WHITE, true); name.setMaxLines(2);
+                subtitleView = label("", 11, MUTED, false); subtitleView.setMaxLines(2);
+                priceView = label("", 16, LIME, true);
+                copy.addView(name); copy.addView(subtitleView); copy.addView(priceView);
+                card.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+                action = label("", 11, LIME, true);
+                card.addView(action, new LinearLayout.LayoutParams(dp(42), dp(42)));
+                card.setTag(new Object[]{image, name, subtitleView, priceView, action});
+            }
+            String url = photoMap.urlFor(product);
+            if (!java.util.Objects.equals(url, image.getTag()) || image.getDrawable() == null)
+                imageLoader.load(image, url, api);
+            name.setText(product.name);
+            subtitleView.setText(product.type + (product.isEquipment()
                     ? " · " + product.memory + " · " + product.color + " · " + product.equipmentStatus
-                    : " · " + product.category + " · Stock " + product.stock);
-            copy.addView(label(subtitle,
-                    11, MUTED, false));
-            copy.addView(label(money(product.cashPrice), 16, LIME, true));
-            card.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
-            card.addView(label(productsTab ? "VER" : "+", productsTab ? 11 : 25, LIME, true),
-                    new LinearLayout.LayoutParams(dp(42), dp(42)));
+                    : " · " + product.category + " · Stock " + product.stock));
+            priceView.setText(money(product.cashPrice));
+            action.setText(productsTab ? "VER" : "+"); action.setTextSize(productsTab ? 11 : 25);
             card.setAlpha(product.stock <= 0 ? .55f : 1f);
             return card;
         }

@@ -108,8 +108,24 @@ final class CelFiiApi {
                         .put("seller", seller).put("lines", lines)
                         .put("customerName", customerName).put("customerPhone", customerPhone)
                         .put("warrantyDays", warrantyDays).put("payments", payments);
+                // Persist the exact payload before sending. An uncertain response must
+                // reuse the same request ID, including after an app restart.
+                body.remove("clientRequestId");
+                String fingerprint = body.toString();
+                synchronized (preferences) {
+                    String previous = preferences.getString("pending_sale_payload", "");
+                    String stableId = previous.equals(fingerprint)
+                            ? preferences.getString("pending_sale_id", requestId) : requestId;
+                    if (!preferences.edit().putString("pending_sale_payload", fingerprint)
+                            .putString("pending_sale_id", stableId).commit()) {
+                        throw new IllegalStateException("No se pudo proteger el reintento de la venta");
+                    }
+                    body.put("clientRequestId", stableId);
+                }
                 JSONObject response = request("POST", BuildConfig.CELFII_API_URL, body);
-                callback.success(response.getString("saleId"));
+                String saleId = response.getString("saleId");
+                preferences.edit().remove("pending_sale_payload").remove("pending_sale_id").commit();
+                callback.success(saleId);
             } catch (Exception error) { callback.error(message(error)); }
         }, "celfii-sale").start();
     }

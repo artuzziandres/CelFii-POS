@@ -78,6 +78,17 @@ final class Product {
         this.cost = cost;
     }
 
+    static String normalizeSearch(String value) {
+        return java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "").toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private String searchCache;
+    String normalizedSearch() {
+        if (searchCache == null) searchCache = normalizeSearch(searchable());
+        return searchCache;
+    }
+
     String searchable() {
         return (id + " " + name + " " + category + " " + code + " " + backupCode + " "
                 + type + " " + brand + " " + compatibleModels + " " + color + " " + imei

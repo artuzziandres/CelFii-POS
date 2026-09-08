@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:drawable="@drawable/logo_celfii_app"
-    android:inset="12dp" />
+<inset xmlns:android="http://schemas.android.com/apk/res/android" android:inset="14dp">
+    <bitmap android:src="@drawable/logo_celfii" android:gravity="fill" android:filter="true" />
+</inset>
