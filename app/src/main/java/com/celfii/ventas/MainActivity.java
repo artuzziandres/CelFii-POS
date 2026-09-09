@@ -519,6 +519,17 @@ public final class MainActivity extends Activity {
     }
 
     private void synchronize(boolean announce) {
+        api.catalogPhotos(new CelFiiApi.Callback<org.json.JSONObject>() {
+            @Override public void success(org.json.JSONObject photos) {
+                runOnUiThread(() -> {
+                    photoMap.update(photos);
+                    if (activeSearch != null) filterProducts(activeSearch.getText().toString());
+                });
+            }
+            @Override public void error(String message) {
+                if (announce) runOnUiThread(() -> toast("No se pudieron renovar las fotos. Se conserva la última copia."));
+            }
+        });
         syncStatus.setText("● ACTUALIZANDO");
         syncStatus.setTextColor(LIME);
         if (announce) toast("Actualizando productos…");

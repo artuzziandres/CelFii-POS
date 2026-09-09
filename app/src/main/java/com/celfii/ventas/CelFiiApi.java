@@ -52,6 +52,23 @@ final class CelFiiApi {
         }, "celfii-token").start();
     }
 
+    void catalogPhotos(Callback<JSONObject> callback) {
+        new Thread(() -> {
+            try {
+                JSONObject response = request("GET", BuildConfig.CELFII_API_URL
+                        + "?action=catalog&_=" + System.currentTimeMillis(), null);
+                JSONArray rows = response.getJSONArray("products");
+                JSONObject photos = new JSONObject();
+                for (int i = 0; i < rows.length(); i++) {
+                    JSONObject row = rows.getJSONObject(i);
+                    String id = row.optString("id");
+                    if (!id.isEmpty()) photos.put(id, row.optString("photo"));
+                }
+                callback.success(photos);
+            } catch (Exception error) { callback.error(message(error)); }
+        }, "celfii-catalog-photos").start();
+    }
+
     void products(Callback<List<Product>> callback) {
         new Thread(() -> {
             try {
