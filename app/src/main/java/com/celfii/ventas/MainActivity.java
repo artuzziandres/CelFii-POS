@@ -1104,6 +1104,7 @@ public final class MainActivity extends Activity {
         LinearLayout form = column();
         form.setPadding(dp(18), dp(4), dp(18), dp(8));
         form.addView(label("* Obligatorio · Foto principal y datos del producto", 13, LIME, true));
+        LinearLayout extraPhotos = column();
         int photoCount = 3;
         for (int slot = 0; slot < photoCount; slot++) {
             final int selectedSlot = slot;
@@ -1115,10 +1116,10 @@ public final class MainActivity extends Activity {
             if (current != null && !(slot > 0 && (slot == 1 ? current.photo2 : current.photo3).isBlank()))
                 loadProductPhoto(preview, existing, current.id, slot + 1);
             else preview.setImageResource(R.drawable.logo_celfii_app);
-            form.addView(preview, new LinearLayout.LayoutParams(-1, dp(120)));
+            (slot == 0 ? form : extraPhotos).addView(preview, new LinearLayout.LayoutParams(-1, dp(slot == 0 ? 190 : 120)));
             Button photo = actionButton((slot == 0 ? "FOTO PRINCIPAL *" : "FOTO " + (slot + 1) + " · OPCIONAL"), false);
             photo.setOnClickListener(v -> chooseProductPhoto(selectedSlot));
-            form.addView(photo, new LinearLayout.LayoutParams(-1, dp(46)));
+            (slot == 0 ? form : extraPhotos).addView(photo, new LinearLayout.LayoutParams(-1, dp(46)));
         }
         EditText name = editorInput(equipment ? "Modelo *" : "Nombre *",
                 current == null ? "" : current.name, false);
@@ -1146,8 +1147,9 @@ public final class MainActivity extends Activity {
         EditText cost = editorInput("Costo", current == null ? "" : plainNumber(current.cost), true);
         Spinner condition = new Spinner(this);
         condition.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
-                new String[]{"Nuevo", "Usado"}));
-        if (current != null && "Usado".equalsIgnoreCase(current.condition)) condition.setSelection(1);
+                new String[]{"Elegir condición", "Nuevo", "Usado"}));
+        if (current != null && "Usado".equalsIgnoreCase(current.condition)) condition.setSelection(2);
+        else if (current != null && "Nuevo".equalsIgnoreCase(current.condition)) condition.setSelection(1);
         LinearLayout codeRow = row();
         code.setLayoutParams(new LinearLayout.LayoutParams(0, dp(52), 1));
         codeRow.addView(code);
@@ -1164,37 +1166,54 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams codeRowParams = new LinearLayout.LayoutParams(-1, dp(52));
         codeRowParams.topMargin = dp(7);
         codeRow.setLayoutParams(codeRowParams);
-        category.setHint("Categoría *");
-        description.setHint(equipment ? "Características del equipo *" : replacement
-                ? "Características del repuesto *" : "Características del accesorio *");
-        form.addView(name);
-        if (!equipment) form.addView(category);
-        form.addView(cash);
-        if (!equipment) form.addView(stock);
-        form.addView(description);
+        Spinner grade = new Spinner(this);
+        String[] grades = {"Elegir estado estético", "A+ · Como nuevo", "A · Excelente", "B · Muy bueno", "C · Con detalles"};
+        grade.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, grades));
+        if (current != null) for (int i=1;i<grades.length;i++)
+            if (grades[i].split(" · ")[0].equals(current.aestheticGrade())) grade.setSelection(i);
+        TextView gradeLabel = label("Estado estético *", 18, LIME, true);
+        name.setTextSize(22); memory.setTextSize(22); cash.setTextSize(24);
+        category.setHint("Categoría (opcional)"); description.setHint("Descripción (opcional)");
+        form.addView(name); form.addView(cash);
         LinearLayout optional = column(); optional.setVisibility(View.GONE);
+        optional.addView(extraPhotos);
         if (equipment) {
-            brand.setHint("Marca *"); memory.setHint("Memoria / capacidad *"); color.setHint("Color *");
-            battery.setHint("Batería % · obligatoria en iPhone usado");
-            form.addView(brand); form.addView(memory); form.addView(color);
-            form.addView(label("Condición *", 13, MUTED, true)); form.addView(condition); form.addView(battery);
-            optional.addView(imei); optional.addView(observations); optional.addView(supplier);
-        } else if (replacement) {
-            compatible.setHint("Modelos compatibles *"); quality.setHint("Calidad / original o alternativo *");
-            form.addView(compatible); form.addView(quality);
-            optional.addView(brand); optional.addView(color); optional.addView(replacementWarranty);
-            optional.addView(supplier); optional.addView(codeRow); optional.addView(backup);
+            memory.setHint("Memoria / capacidad *"); form.addView(memory);
+            form.addView(label("Condición *", 18, MUTED, true)); form.addView(condition);
+            form.addView(gradeLabel); form.addView(grade);
+            battery.setHint("Salud de batería % · iPhone usado"); form.addView(battery);
+            optional.addView(brand); optional.addView(color); optional.addView(imei);
+            optional.addView(observations); optional.addView(supplier);
+            Runnable updateFields = () -> {
+                boolean used = "Usado".equals(String.valueOf(condition.getSelectedItem()));
+                gradeLabel.setVisibility(used ? View.VISIBLE : View.GONE);
+                grade.setVisibility(used ? View.VISIBLE : View.GONE);
+                battery.setVisibility(used && name.getText().toString().toLowerCase(Locale.ROOT).contains("iphone") ? View.VISIBLE : View.GONE);
+            };
+            condition.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+                public void onItemSelected(android.widget.AdapterView<?> p, View v, int pos, long id) { updateFields.run(); }
+                public void onNothingSelected(android.widget.AdapterView<?> p) { }
+            });
+            name.addTextChangedListener(new TextWatcher() {
+                public void beforeTextChanged(CharSequence t,int a,int c,int f) { }
+                public void onTextChanged(CharSequence t,int a,int b,int c) { updateFields.run(); }
+                public void afterTextChanged(Editable e) { }
+            });
+            updateFields.run();
         } else {
-            optional.addView(brand); optional.addView(compatible); optional.addView(color);
+            form.addView(stock);
+            if (replacement) { compatible.setHint("Modelos compatibles *"); form.addView(compatible); optional.addView(quality); optional.addView(replacementWarranty); }
+            else optional.addView(compatible);
+            optional.addView(category); optional.addView(brand); optional.addView(color);
             optional.addView(supplier); optional.addView(codeRow); optional.addView(backup);
         }
-        card.setVisibility(View.VISIBLE);
+        optional.addView(description); card.setVisibility(View.VISIBLE);
         optional.addView(card); optional.addView(cost);
-        Button optionalToggle = actionButton("DATOS OPCIONALES +", false);
+        Button optionalToggle = actionButton("MÁS CARACTERÍSTICAS +", false);
         optionalToggle.setOnClickListener(v -> {
             boolean open = optional.getVisibility() == View.GONE;
             optional.setVisibility(open ? View.VISIBLE : View.GONE);
-            optionalToggle.setText(open ? "OCULTAR DATOS OPCIONALES −" : "DATOS OPCIONALES +");
+            optionalToggle.setText(open ? "MENOS CARACTERÍSTICAS −" : "MÁS CARACTERÍSTICAS +");
         });
         form.addView(optionalToggle); form.addView(optional);
         final Button deleteProduct = current == null ? null : actionButton("ELIMINAR PRODUCTO", false);
@@ -1220,9 +1239,9 @@ public final class MainActivity extends Activity {
                              (current.photoUrl == null || current.photoUrl.trim().isEmpty())))) {
                         toast("Agregá la foto principal del producto"); return;
                     }
-                    EditText[] requiredFields = equipment ? new EditText[]{brand, memory, color, description}
-                            : replacement ? new EditText[]{category, compatible, quality, description}
-                            : new EditText[]{category, description};
+                    EditText[] requiredFields = equipment ? new EditText[]{memory}
+                            : replacement ? new EditText[]{compatible}
+                            : new EditText[]{};
                     for (EditText field : requiredFields) if (field.getText().toString().trim().isEmpty()) {
                         field.setError("Obligatorio"); field.requestFocus(); toast("Completá " + field.getHint()); return;
                     }
@@ -1235,18 +1254,27 @@ public final class MainActivity extends Activity {
                     }
                     if (decimal(cash) <= 0) { toast("Ingresá el precio"); return; }
                     if (!equipment && current == null && (stock.getText().toString().trim().isEmpty() || decimal(stock) < 0 || decimal(stock) != integer(stock))) { toast("Ingresá un stock entero, cero o mayor"); return; }
+                    if (equipment && condition.getSelectedItemPosition() == 0) { toast("Elegí Nuevo o Usado"); return; }
+                    boolean usedEquipment = equipment && "Usado".equals(String.valueOf(condition.getSelectedItem()));
+                    if (usedEquipment && grade.getSelectedItemPosition() == 0) { toast("Elegí A+, A, B o C"); return; }
+                    String selectedGrade = usedEquipment ? grades[grade.getSelectedItemPosition()].split(" · ")[0] : "";
+                    String savedObservations = observations.getText().toString().trim();
+                    if (equipment) {
+                        savedObservations = savedObservations.replaceAll("(?m)^Estado estético: (?:A\\+|A|B|C)\\s*", "").trim();
+                        if (usedEquipment) savedObservations = "Estado estético: " + selectedGrade + (savedObservations.isEmpty() ? "" : "\n" + savedObservations);
+                    }
                     Product value = new Product(current == null ? "" : current.id,
-                            name.getText().toString().trim(), equipment ? "Equipos" : category.getText().toString().trim(),
+                            name.getText().toString().trim(), equipment ? "Equipos" : (category.getText().toString().trim().isEmpty() ? "Otros" : category.getText().toString().trim()),
                             decimal(cash), decimal(card), current == null ? integer(stock) : current.stock,
                             current == null ? "" : current.photo, current == null ? "" : current.photo2,
                             current == null ? "" : current.photo3, "", code.getText().toString().trim(),
                             backup.getText().toString().trim(), selectedType, description.getText().toString().trim(),
                             current == null ? 0 : current.minimumStock, brand.getText().toString().trim(),
                             compatible.getText().toString().trim(), color.getText().toString().trim(),
-                            supplier.getText().toString().trim(), quality.getText().toString().trim(),
+                            supplier.getText().toString().trim(), equipment ? selectedGrade : quality.getText().toString().trim(),
                             replacementWarranty.getText().toString().trim(), imei.getText().toString().trim(),
                             memory.getText().toString().trim(), String.valueOf(condition.getSelectedItem()),
-                            battery.getText().toString().trim(), observations.getText().toString().trim(),
+                            battery.getText().toString().trim(), savedObservations,
                             current == null ? "Disponible" : current.equipmentStatus,
                             current == null ? "" : current.reservationCustomer,
                             current == null ? "" : current.reservationPhone,

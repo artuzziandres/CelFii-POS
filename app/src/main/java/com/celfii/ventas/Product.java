@@ -95,6 +95,12 @@ final class Product {
                 + " " + memory).toLowerCase();
     }
 
+    String aestheticGrade() {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?m)^Estado estético: (A\\+|A|B|C)(?:\\s|$)").matcher(observations == null ? "" : observations);
+        if (m.find()) return m.group(1);
+        return quality != null && quality.matches("A\\+|A|B|C") ? quality : "";
+    }
+
     boolean isEquipment() { return "Equipo".equalsIgnoreCase(type); }
     boolean isSold() { return isEquipment() && "Vendido".equalsIgnoreCase(equipmentStatus); }
     boolean isReserved() { return isEquipment() && "Reservado".equalsIgnoreCase(equipmentStatus); }
