@@ -196,7 +196,7 @@ final class CelFiiApi {
                         .put("code", product.code).put("backupCode", product.backupCode)
                         .put("type", product.type).put("description", product.description)
                         .put("minimumStock", product.minimumStock)
-                        .put("initialStock", initialStock);
+                        .put("initialStock", initialStock).put("stock", initialStock);
                 value.put("brand", product.brand).put("compatibleModels", product.compatibleModels)
                         .put("color", product.color).put("supplier", product.supplier)
                         .put("quality", product.quality).put("warrantyInfo", product.warrantyInfo)
@@ -211,7 +211,7 @@ final class CelFiiApi {
                         .put("reservationExpiry", product.reservationExpiry)
                         .put("cost", product.cost);
                 JSONObject response = request("POST", BuildConfig.CELFII_API_URL,
-                        base(creating ? "createProduct" : "updateProduct").put("product", value));
+                        base(creating ? "createProduct" : "updateProductV2").put("product", value));
                 callback.success(response.getString("productId"));
             } catch (Exception error) { callback.error(message(error)); }
         }, "celfii-product-save").start();
@@ -221,10 +221,30 @@ final class CelFiiApi {
         new Thread(() -> {
             try {
                 JSONObject response = request("POST", BuildConfig.CELFII_API_URL,
-                        base("deleteProduct").put("productId", productId).put("reason", reason));
+                        base("trashProduct").put("productId", productId).put("reason", reason));
                 callback.success(response.getString("productId"));
             } catch (Exception error) { callback.error(message(error)); }
         }, "celfii-product-delete").start();
+    }
+
+    void deletedProducts(Callback<JSONArray> callback) {
+        new Thread(() -> {
+            try {
+                JSONObject response = request("GET", BuildConfig.CELFII_API_URL
+                    + "?action=deletedProducts&token=" + encoded(token()), null);
+                callback.success(response.getJSONArray("products"));
+            } catch (Exception error) { callback.error(message(error)); }
+        }, "celfii-trash").start();
+    }
+
+    void restoreProduct(String productId, Callback<String> callback) {
+        new Thread(() -> {
+            try {
+                JSONObject response = request("POST", BuildConfig.CELFII_API_URL,
+                    base("restoreProduct").put("productId", productId));
+                callback.success(response.getString("productId"));
+            } catch (Exception error) { callback.error(message(error)); }
+        }, "celfii-restore").start();
     }
 
     void orders(Callback<List<Order>> callback) {

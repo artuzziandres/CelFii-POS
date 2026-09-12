@@ -62,6 +62,7 @@ public final class MainActivity extends Activity {
     private static final NumberFormat MONEY = NumberFormat.getCurrencyInstance(
             Locale.forLanguageTag("es-AR"));
 
+    private final Map<String, Button> navButtons = new LinkedHashMap<>();
     private LinearLayout content;
     private TextView syncStatus;
     private TextView productCount;
@@ -158,6 +159,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showSale() {
+        selectNav("VENTA");
         historyTab = false;
         productsTab = false;
         content.removeAllViews();
@@ -195,6 +197,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showProducts() {
+        selectNav("PRODUCTOS");
         historyTab = false;
         productsTab = true;
         content.removeAllViews();
@@ -229,6 +232,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showOrders() {
+        selectNav("PEDIDOS");
         historyTab = false;
         productsTab = false;
         content.removeAllViews();
@@ -789,6 +793,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showHistory() {
+        selectNav("HISTORIAL");
         historyTab = true;
         productsTab = false;
         content.removeAllViews();
@@ -956,12 +961,16 @@ public final class MainActivity extends Activity {
     }
 
     private void showMore() {
+        selectNav("MÁS");
         historyTab = false;
         productsTab = false;
         content.removeAllViews();
         LinearLayout page = column();
         page.setPadding(dp(14), dp(7), dp(14), dp(10));
         page.addView(label("Más", 26, WHITE, true));
+        Button trash = actionButton("PRODUCTOS ELIMINADOS", false);
+        trash.setOnClickListener(v -> showTrash());
+        page.addView(trash, new LinearLayout.LayoutParams(-1, dp(54)));
         Button update = actionButton("ACTUALIZAR CATÁLOGO", true);
         update.setOnClickListener(v -> synchronize(true));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(54));
@@ -1029,7 +1038,7 @@ public final class MainActivity extends Activity {
         AlertDialog.Builder builder = new AlertDialog.Builder(this).setTitle(product.name)
                 .setMessage(details)
                 .setPositiveButton("Editar", (dialog, which) -> showProductEditor(product));
-        builder.setNegativeButton("Eliminar", (d, w) -> showDeleteProduct(product, null));
+        builder.setNegativeButton("CERRAR", null);
         if (product.isEquipment())
             builder.setNeutralButton("Agregar a venta", (d, w) -> addProduct(product));
         builder.show();
@@ -1138,8 +1147,8 @@ public final class MainActivity extends Activity {
         EditText cash = editorInput("Precio efectivo/transferencia *",
                 current == null ? "" : plainNumber(current.cashPrice), true);
         EditText card = editorInput("Precio Posnet", current == null ? "" : plainNumber(current.creditPrice), true);
-        EditText stock = editorInput("Stock inicial *", current == null ? (equipment ? "1" : "0") : String.valueOf(current.stock), true);
-        stock.setEnabled(current == null);
+        EditText stock = editorInput(current == null ? "Stock inicial *" : "Cantidad disponible *", current == null ? (equipment ? "1" : "0") : String.valueOf(current.stock), true);
+        stock.setEnabled(true);
         if (equipment) { stock.setText("1"); stock.setVisibility(View.GONE); card.setVisibility(View.GONE); category.setVisibility(View.GONE); }
         EditText code = editorInput("Código de barras", current == null ? "" : current.code, false);
         EditText backup = editorInput("Código alternativo", current == null ? "" : current.backupCode, false);
@@ -1264,7 +1273,7 @@ public final class MainActivity extends Activity {
                         } catch (NumberFormatException error) { battery.setError("Ingresá un porcentaje entre 1 y 100"); battery.requestFocus(); return; }
                     }
                     if (decimal(cash) <= 0) { toast("Ingresá el precio"); return; }
-                    if (!equipment && current == null && (stock.getText().toString().trim().isEmpty() || decimal(stock) < 0 || decimal(stock) != integer(stock))) { toast("Ingresá un stock entero, cero o mayor"); return; }
+                    if (!equipment && (stock.getText().toString().trim().isEmpty() || decimal(stock) < 0 || decimal(stock) != integer(stock))) { toast("Ingresá un stock entero, cero o mayor"); return; }
                     if (equipment && condition.getSelectedItemPosition() == 0) { toast("Elegí Nuevo o Usado"); return; }
                     boolean usedEquipment = equipment && "Usado".equals(String.valueOf(condition.getSelectedItem()));
                     if (usedEquipment && grade.getSelectedItemPosition() == 0) { toast("Elegí A+, A, B o C"); return; }
@@ -1276,7 +1285,7 @@ public final class MainActivity extends Activity {
                     }
                     Product value = new Product(current == null ? "" : current.id,
                             name.getText().toString().trim(), equipment ? "Equipos" : (category.getText().toString().trim().isEmpty() ? "Otros" : category.getText().toString().trim()),
-                            decimal(cash), decimal(card), current == null ? integer(stock) : current.stock,
+                            decimal(cash), decimal(card), equipment ? (current == null ? 1 : current.stock) : integer(stock),
                             current == null ? "" : current.photo, current == null ? "" : current.photo2,
                             current == null ? "" : current.photo3, "", code.getText().toString().trim(),
                             backup.getText().toString().trim(), selectedType, description.getText().toString().trim(),
@@ -1293,7 +1302,7 @@ public final class MainActivity extends Activity {
                             current == null ? "" : current.reservationDate,
                             current == null ? "" : current.reservationExpiry, decimal(cost));
                     dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
-                    saveProduct(value, equipment ? 1 : integer(stock), current == null, dialog);
+                    saveProduct(value, equipment ? (current == null ? 1 : current.stock) : integer(stock), current == null, dialog);
                 }));
         if (deleteProduct != null) {
             deleteProduct.setOnClickListener(v -> showDeleteProduct(current, dialog));
@@ -1304,10 +1313,10 @@ public final class MainActivity extends Activity {
     private void showDeleteProduct(Product product, AlertDialog editor) {
         AlertDialog confirmation = new AlertDialog.Builder(this)
                 .setTitle("Eliminar producto")
-                .setMessage("¿Querés eliminar definitivamente “" + product.name
-                        + "”?\n\nSe quitará de la APK y de la página web. Las ventas anteriores no se modificarán.")
+                .setMessage("¿Querés mover a la papelera “" + product.name
+                        + "”?\n\nPodrás restaurarlo desde Más durante 15 días. Luego se borrará definitivamente. Las ventas anteriores se conservan.")
                 .setNegativeButton("CANCELAR", null)
-                .setPositiveButton("ELIMINAR DEFINITIVAMENTE", null)
+                .setPositiveButton("MOVER A PAPELERA", null)
                 .create();
         confirmation.setOnShowListener(value -> {
             Button remove = confirmation.getButton(AlertDialog.BUTTON_POSITIVE);
@@ -1330,7 +1339,7 @@ public final class MainActivity extends Activity {
                             @Override public void error(String message) {
                                 runOnUiThread(() -> {
                                     remove.setEnabled(true);
-                                    remove.setText("ELIMINAR DEFINITIVAMENTE");
+                                    remove.setText("MOVER A PAPELERA");
                                     toast("No se pudo eliminar: " + message);
                                 });
                             }
@@ -1490,6 +1499,7 @@ public final class MainActivity extends Activity {
             subtitleView.setText(product.type + (product.isEquipment()
                     ? " · " + product.memory + " · " + product.color + " · " + product.equipmentStatus
                     : " · " + product.category + " · Stock " + product.stock));
+            subtitleView.setTextColor(product.stock <= product.minimumStock ? RED : MUTED);
             priceView.setText(money(product.cashPrice));
             action.setText(productsTab ? "VER" : "+"); action.setTextSize(productsTab ? 11 : 25);
             card.setAlpha(product.stock <= 0 ? .55f : 1f);
@@ -1520,8 +1530,60 @@ public final class MainActivity extends Activity {
         button.setTextSize(10);
         button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         button.setBackgroundColor(Color.TRANSPARENT);
+        navButtons.put(text, button);
         button.setOnClickListener(view -> action.run());
         nav.addView(button, new LinearLayout.LayoutParams(0, dp(52), 1));
+    }
+
+    private void selectNav(String selected) {
+        for (Map.Entry<String, Button> entry : navButtons.entrySet()) {
+            Button button = entry.getValue();
+            boolean active = entry.getKey().equals(selected);
+            button.setSelected(active);
+            button.setTextColor(active ? BLACK : MUTED);
+            button.setBackground(rounded(active ? LIME : Color.TRANSPARENT, Color.TRANSPARENT, 0, 12));
+            button.animate().cancel();
+            button.setScaleX(active ? .93f : 1f);
+            button.setScaleY(active ? .93f : 1f);
+            button.animate().scaleX(1f).scaleY(1f).setDuration(180).start();
+            button.setContentDescription(entry.getKey() + (active ? ", seleccionado" : ""));
+        }
+    }
+
+    private void showTrash() {
+        toast("Cargando productos eliminados…");
+        api.deletedProducts(new CelFiiApi.Callback<org.json.JSONArray>() {
+            public void success(org.json.JSONArray rows) { runOnUiThread(() -> {
+                LinearLayout list = column();
+                list.setPadding(dp(16), dp(12), dp(16), dp(12));
+                list.addView(label("Podés restaurar durante 15 días desde la eliminación.", 14, MUTED, false));
+                if (rows.length() == 0) list.addView(label("La papelera está vacía", 18, WHITE, false));
+                for (int i = 0; i < rows.length(); i++) {
+                    org.json.JSONObject item = rows.optJSONObject(i);
+                    if (item == null) continue;
+                    String id = item.optString("id");
+                    Button restore = actionButton(item.optString("name") + " · " + item.optInt("daysRemaining") + " días · RESTAURAR", false);
+                    list.addView(restore);
+                    restore.setOnClickListener(v -> new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Restaurar producto")
+                        .setMessage(item.optString("name"))
+                        .setNegativeButton("CANCELAR", null)
+                        .setPositiveButton("RESTAURAR", (d,w) -> {
+                            restore.setEnabled(false);
+                            api.restoreProduct(id, new CelFiiApi.Callback<String>() {
+                                public void success(String value) { runOnUiThread(() -> {
+                                    list.removeView(restore); toast("Producto restaurado"); synchronize(false);
+                                }); }
+                                public void error(String message) { runOnUiThread(() -> { restore.setEnabled(true); toast(message); }); }
+                            });
+                        }).show());
+                }
+                ScrollView scroll = new ScrollView(MainActivity.this); scroll.addView(list);
+                new AlertDialog.Builder(MainActivity.this).setTitle("Productos eliminados")
+                    .setView(scroll).setPositiveButton("CERRAR", null).show();
+            }); }
+            public void error(String message) { runOnUiThread(() -> toast("No se pudo abrir la papelera: " + message)); }
+        });
     }
 
     private Button actionButton(String text, boolean primary) {
