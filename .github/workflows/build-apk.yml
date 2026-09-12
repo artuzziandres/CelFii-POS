@@ -39,3 +39,10 @@ jobs:
           name: CelFii-Ventas-0.9.7
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Exportar APK para entrega
+        run: |
+          echo CELFII_APK_BASE64_BEGIN
+          base64 -w 4096 app/build/outputs/apk/debug/app-debug.apk
+          echo CELFII_APK_BASE64_END
+          sha256sum app/build/outputs/apk/debug/app-debug.apk

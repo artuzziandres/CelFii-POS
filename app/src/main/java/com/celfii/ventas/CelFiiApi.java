@@ -186,7 +186,7 @@ final class CelFiiApi {
         }, "celfii-sales").start();
     }
 
-    void saveProduct(Product product, int initialStock, boolean creating,
+    void saveProduct(Product product, int initialStock, boolean creating, int previousStock,
                      Callback<String> callback) {
         new Thread(() -> {
             try {
@@ -196,7 +196,7 @@ final class CelFiiApi {
                         .put("code", product.code).put("backupCode", product.backupCode)
                         .put("type", product.type).put("description", product.description)
                         .put("minimumStock", product.minimumStock)
-                        .put("initialStock", initialStock).put("stock", initialStock);
+                        .put("initialStock", initialStock).put("stock", initialStock).put("expectedStock", previousStock);
                 value.put("brand", product.brand).put("compatibleModels", product.compatibleModels)
                         .put("color", product.color).put("supplier", product.supplier)
                         .put("quality", product.quality).put("warrantyInfo", product.warrantyInfo)
@@ -211,7 +211,7 @@ final class CelFiiApi {
                         .put("reservationExpiry", product.reservationExpiry)
                         .put("cost", product.cost);
                 JSONObject response = request("POST", BuildConfig.CELFII_API_URL,
-                        base(creating ? "createProduct" : "updateProductV2").put("product", value));
+                        base(creating ? "createProduct" : (initialStock == previousStock ? "updateProduct" : "updateProductV2")).put("product", value));
                 callback.success(response.getString("productId"));
             } catch (Exception error) { callback.error(message(error)); }
         }, "celfii-product-save").start();

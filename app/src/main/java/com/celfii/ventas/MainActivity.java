@@ -1078,7 +1078,7 @@ public final class MainActivity extends Activity {
                 depositValue, format.format(new Date()), format.format(expiry.getTime()));
         dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setEnabled(false);
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
-        api.saveProduct(reserved, 1, false, new CelFiiApi.Callback<>() {
+        api.saveProduct(reserved, 1, false, 1, new CelFiiApi.Callback<>() {
             @Override public void success(String id) { runOnUiThread(() -> {
                 dialog.dismiss();
                 if (print) printReservation(reserved);
@@ -1095,7 +1095,7 @@ public final class MainActivity extends Activity {
 
     private void cancelReservation(Product product) {
         Product available = product.withReservation("Disponible", "", "", 0, "", "");
-        api.saveProduct(available, 1, false, new CelFiiApi.Callback<>() {
+        api.saveProduct(available, 1, false, 1, new CelFiiApi.Callback<>() {
             @Override public void success(String id) { runOnUiThread(() -> {
                 toast("Reserva cancelada"); synchronize(false); }); }
             @Override public void error(String message) { runOnUiThread(() ->
@@ -1302,7 +1302,7 @@ public final class MainActivity extends Activity {
                             current == null ? "" : current.reservationDate,
                             current == null ? "" : current.reservationExpiry, decimal(cost));
                     dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
-                    saveProduct(value, equipment ? (current == null ? 1 : current.stock) : integer(stock), current == null, dialog);
+                    saveProduct(value, equipment ? (current == null ? 1 : current.stock) : integer(stock), current == null, current == null ? 0 : current.stock, dialog);
                 }));
         if (deleteProduct != null) {
             deleteProduct.setOnClickListener(v -> showDeleteProduct(current, dialog));
@@ -1349,9 +1349,9 @@ public final class MainActivity extends Activity {
         confirmation.show();
     }
 
-    private void saveProduct(Product value, int initialStock, boolean creating, AlertDialog dialog) {
+    private void saveProduct(Product value, int initialStock, boolean creating, int previousStock, AlertDialog dialog) {
         toast("Guardando producto…");
-        api.saveProduct(value, initialStock, creating, new CelFiiApi.Callback<>() {
+        api.saveProduct(value, initialStock, creating, previousStock, new CelFiiApi.Callback<>() {
             @Override public void success(String productId) {
                 uploadPendingPhotos(productId, 0, dialog);
             }
