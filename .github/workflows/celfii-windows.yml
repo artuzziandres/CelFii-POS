@@ -20,6 +20,7 @@ jobs:
           cache: npm
           cache-dependency-path: windows/package-lock.json
       - run: npm ci
+      - run: node node_modules/electron/install.js
       - run: npm test
       - name: Comprobar inicio real de Windows
         run: |
@@ -38,3 +39,4 @@ jobs:
             windows/test-output/interfaz.png
             windows/smoke.log
           retention-days: 14
+
