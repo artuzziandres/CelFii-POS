@@ -33,10 +33,9 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - uses: actions/upload-artifact@v4
         with:
-          name: CelFii-Windows-1.0.0
+          name: CelFii-Windows-1.0.1
           path: |
             windows/dist/*Instalador.exe
-            windows/test-output/interfaz.png
+            windows/test-output/*.png
             windows/smoke.log
           retention-days: 14
-

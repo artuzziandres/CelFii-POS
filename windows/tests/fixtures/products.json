@@ -1,0 +1,68 @@
+[
+  {
+    "id": "4c2c8437",
+    "name": "Cargador only V8 4.4A",
+    "category": "Cargadores y Fuentes de Alimentación",
+    "cashPrice": 9000,
+    "stock": 2,
+    "brand": "Only",
+    "type": "Accesorio",
+    "photo": "https://drive.google.com/uc?export=view&id=1Pc1rCIsRIdYsC9KuAXa1mH-EtkGJX5CG",
+    "code": "0001234567890"
+  },
+  {
+    "id": "ba83bbec",
+    "name": "Cargador Karsen USB-C 3.1A",
+    "category": "Cargadores y Fuentes de Alimentación",
+    "cashPrice": 10500,
+    "stock": 5,
+    "brand": "Karsen",
+    "type": "Accesorio",
+    "photo": "https://drive.google.com/uc?export=view&id=1AcfVTQLDT3NcKPmN4LHZnjg3KP5yKPIb",
+    "code": "DEMO-1"
+  },
+  {
+    "id": "85b86258",
+    "name": "Cargador cabezal time 18W USB-C",
+    "category": "Cargadores y Fuentes de Alimentación",
+    "cashPrice": 10500,
+    "stock": 2,
+    "brand": "",
+    "type": "Accesorio",
+    "photo": "https://drive.google.com/uc?export=view&id=1cTZOkJYbFCWkJsn0SgYVEBOLq55dGq8p",
+    "code": "DEMO-2"
+  },
+  {
+    "id": "be480386",
+    "name": "Cargador Auto 12V Aitech iPhone",
+    "category": "Cargadores y Fuentes de Alimentación",
+    "cashPrice": 13500,
+    "stock": 7,
+    "brand": "Aitech",
+    "type": "Accesorio",
+    "photo": "https://drive.google.com/uc?export=view&id=1hYknPexFZqeq6xFmBE5xiVIKxEZMK-EH",
+    "code": "DEMO-3"
+  },
+  {
+    "id": "486e0b20",
+    "name": "Cargador con cable V8 SOUL 2.4A",
+    "category": "Cargadores y Fuentes de Alimentación",
+    "cashPrice": 9500,
+    "stock": 3,
+    "brand": "Soul",
+    "type": "Accesorio",
+    "photo": "https://drive.google.com/uc?export=view&id=1ido8ZQWFP1FXgsgCdXS33T6Qa39SBmRA",
+    "code": "DEMO-4"
+  },
+  {
+    "id": "58685bff",
+    "name": "Cabezal USB-C y USB XAEA Intensify 30W",
+    "category": "Cargadores y Fuentes de Alimentación",
+    "cashPrice": 9500,
+    "stock": 8,
+    "brand": "XAEA",
+    "type": "Accesorio",
+    "photo": "https://drive.google.com/uc?export=view&id=1F3paelo1DFK-2cLVABEuXNefWDol_zEA",
+    "code": "DEMO-5"
+  }
+]
