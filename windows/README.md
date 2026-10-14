@@ -10,7 +10,7 @@ Conectar la Global TP-POS58 por USB, instalar su controlador oficial y configura
 
 ## Facturación
 
-Una venta no equivale a una factura. El código recuperado de la APK 1.2.0 solo muestra una vista previa sin CAE. La integración fiscal debe verificarse contra el módulo real del servidor antes de afirmar que una factura fue autorizada. No se emiten comprobantes fiscales durante las pruebas.
+Una venta no equivale a una factura. Se porta el flujo real de FiscalActivity de la APK: status, health, prepare, issue, document y attach. La emisión exige revisar receptor e importe y confirmar; pending recupera el mismo comprobante; authorized muestra número y CAE; external bloquea otra emisión. El PDF oficial del servidor se guarda o se abre en el lector de Windows para imprimir. La integración utiliza la misma clave de conexión de la APK. Una factura autorizada en producción todavía debe verificarse durante el uso real. No se emiten comprobantes fiscales durante las pruebas.
 
 ## Desarrollo
 
