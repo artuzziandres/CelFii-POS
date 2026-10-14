@@ -2,7 +2,7 @@
 const $=s=>document.querySelector(s),money=v=>Number(v||0).toLocaleString('es-AR',{style:'currency',currency:'ARS'}),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/usb[\s-]*c|tipo[\s-]*c/g,'usbc');
 let products=[],cart=[],page='sale',settings={},fresh=false,query='',busy=false;
-let category='',sortOrder='default',catalogPage=1;const PAGE_SIZE=48;
+let category='',sortOrder='default',catalogPage=1,renderedQuery='';const PAGE_SIZE=48;
 const photoCache=new Map();let photoQueue=[],photoJobs=0;
 const photoObserver=new IntersectionObserver(entries=>{for(const item of entries)if(item.isIntersecting){photoObserver.unobserve(item.target);loadPhoto(item.target)}},{rootMargin:'150px'});
 async function invoke(name,...args){const r=await window.celfii.invoke(name,...args);if(!r.ok)throw Error(r.error);return r.value}
@@ -36,9 +36,10 @@ function scanProduct(){
   const code=query.trim();if(!code)return;
   const matches=products.filter(p=>[p.code,p.backupCode].some(v=>String(v??'').trim()===code));
   if(matches.length>1)return notice('Este código pertenece a varios artículos. Elegí el producto correcto antes de agregarlo.');
-  if(matches.length===1){if(!add(matches[0].id))return;query='';catalogPage=1;$('#search').value='';$('#clearSearch').hidden=true;cards();focusSearch()}else notice('Código no encontrado. Podés buscar el artículo por nombre.');
+  if(matches.length===1){if(!add(matches[0].id))return;query='';catalogPage=1;$('#search').value='';$('#clearSearch').hidden=true;if(renderedQuery)cards();focusSearch()}else notice('Código no encontrado. Podés buscar el artículo por nombre.');
 }
 function cards(){
+  renderedQuery=query;
   photoObserver.disconnect();
   const terms=norm(query).split(/\s+/).filter(Boolean);
   const list=products.filter(p=>(!category||p.category===category)&&terms.every(t=>norm([p.name,p.id,p.code,p.backupCode,p.brand,p.memory,p.compatibleModels,p.category].join(' ')).includes(t)));

@@ -15,7 +15,8 @@ module.exports=async function(win,app){
   if(catalog.photos<2||!catalog.search||catalog.cards!==sample.length)throw Error('Fotos o búsqueda no disponibles');
   const scanner=await win.webContents.executeJavaScript(`query='0001234567890';document.querySelector('#search').value=query;document.querySelector('#search').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));({quantity:cart[0]?.quantity,query,focused:document.activeElement===document.querySelector('#search')})`);
   if(scanner.quantity!==1||scanner.query!==''||!scanner.focused)throw Error('Falló el escaneo');
-  await new Promise(r=>setTimeout(r,400));
+  for(let i=0;i<12;i++){await new Promise(r=>setTimeout(r,1000));if(await win.webContents.executeJavaScript("document.querySelectorAll('.product-photo.has-photo').length>=2"))break}
+  const ready=await win.webContents.executeJavaScript("document.querySelectorAll('.product-photo.has-photo').length>=2");if(!ready)throw Error('Fotos ausentes después de escanear');
   fs.writeFileSync(path.join(output,'interfaz.png'),(await win.webContents.capturePage()).toPNG());
   await win.webContents.executeJavaScript("viewProduct(products[0].id)");
   for(let i=0;i<12;i++){await new Promise(r=>setTimeout(r,1000));if(await win.webContents.executeJavaScript("!!document.querySelector('#detailImage .has-photo')"))break}
