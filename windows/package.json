@@ -1,0 +1,43 @@
+{
+  "name": "celfii-ventas-windows",
+  "version": "1.0.0",
+  "description": "Cel-Fii Ventas para Windows",
+  "author": "Cel-Fii Tecnolog\u00eda",
+  "main": "src/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64",
+    "test": "node --test tests/*.cjs"
+  },
+  "devDependencies": {
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.celfii.ventas.windows",
+    "productName": "CelFii Ventas",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**",
+      "assets/**",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "artifactName": "CelFii-Ventas-Windows-${version}-Instalador.${ext}"
+    },
+    "npmRebuild": false
+  }
+}
