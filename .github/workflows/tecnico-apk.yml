@@ -1,0 +1,33 @@
+name: Cel-Fii Servicio Técnico APK
+on:
+  push:
+    branches: [codex/servicio-tecnico-apk]
+    paths: ['tecnico/**', '.github/workflows/tecnico-apk.yml']
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Preparar mascota original de Cel-Fii
+        run: |
+          curl --fail --location --max-time 30 https://www.cel-fii.com/pin/Pin-ChatGPT-Pet-1.png --output tecnico/app/src/main/assets/pin.png
+          test $(wc -c < tecnico/app/src/main/assets/pin.png) -lt 5000000
+      - name: Compilar Android
+        working-directory: tecnico
+        run: gradle :app:assembleRelease --stacktrace
+      - name: Guardar APK para firma
+        uses: actions/upload-artifact@v4
+        with:
+          name: CelFii-Tecnico-unsigned
+          path: tecnico/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
