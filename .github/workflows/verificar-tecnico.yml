@@ -1,0 +1,22 @@
+name: Verificar APK Cel-Fii Técnico
+on:
+  push:
+    branches: [codex/servicio-tecnico-apk]
+    paths: ['tecnico-release/**', '.github/workflows/verificar-tecnico.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verificar firma oficial Android
+        run: |
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          "$SIGNER" verify --verbose --print-certs tecnico-release/CelFii-Tecnico-1.0.0.apk
+          echo "8ee542f76343b8138d23abc593671f0db04b2a03069504e9b0325afeebf3471d  tecnico-release/CelFii-Tecnico-1.0.0.apk" | sha256sum --check
