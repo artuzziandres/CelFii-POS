@@ -18,9 +18,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Preparar mascota original de Cel-Fii
+      - name: Comprobar mascota empaquetada de Cel-Fii
         run: |
-          curl --fail --location --max-time 30 https://www.cel-fii.com/pin/Pin-ChatGPT-Pet-1.png --output tecnico/app/src/main/assets/pin.png
+          test -s tecnico/app/src/main/assets/pin.png
           test $(wc -c < tecnico/app/src/main/assets/pin.png) -lt 5000000
       - name: Compilar Android
         working-directory: tecnico
