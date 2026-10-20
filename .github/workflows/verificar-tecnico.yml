@@ -15,8 +15,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Verificar firma oficial Android
+      - name: Verificar firma oficial Android y versión
         run: |
           SIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
-          "$SIGNER" verify --verbose --print-certs tecnico-release/CelFii-Tecnico-1.0.0.apk
-          echo "8ee542f76343b8138d23abc593671f0db04b2a03069504e9b0325afeebf3471d  tecnico-release/CelFii-Tecnico-1.0.0.apk" | sha256sum --check
+          "$SIGNER" verify --verbose --print-certs tecnico-release/CelFii-Tecnico-1.1.0.apk | tee /tmp/tecnico-signature.txt
+          grep -F '2a9cd79767b8106eb06e7d894f294a725e53c9db87cf31fdd7c8f6dd8f49c78b' /tmp/tecnico-signature.txt
+          echo "d0c839da94a7e4b3f18a656fad6f73c5bccd9a0ad0e1c6dadb3cef5484f0d4ef  tecnico-release/CelFii-Tecnico-1.1.0.apk" | sha256sum --check
+          AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)
+          "$AAPT" dump badging tecnico-release/CelFii-Tecnico-1.1.0.apk | tee /tmp/tecnico-package.txt
+          grep -E "package: name='com.celfii.tecnico' versionCode='2' versionName='1.1.0'" /tmp/tecnico-package.txt
+          unzip -p tecnico-release/CelFii-Tecnico-1.1.0.apk assets/index.html | grep -F 'CELFII1:'
