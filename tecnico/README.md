@@ -17,7 +17,7 @@ El flujo `tecnico-apk.yml` obtiene el recurso original de Pin y produce un APK s
 
 ## Activación
 
-En Conexión, configurar la URL HTTPS de Apps Script terminada en `/exec` y una clave por dispositivo emitida desde la planilla autorizada. Se guarda cifrada con Android Keystore. El servidor debe verificar la clave antes de leer o escribir.
+En la planilla autorizada: Cel-Fii Técnico → Activar APK. Copiar el código completo `CELFII1:…` y pegarlo en Conexión en la APK. Android comprueba el acceso antes de guardar la conexión cifrada con Android Keystore. El servidor verifica la clave antes de leer o escribir.
 
 ## Protocolo
 
@@ -28,4 +28,4 @@ Cada guardado lleva una clave idempotente. No se reintentan escrituras automáti
 
 ## Estado
 
-Proyecto Android en preparación. La publicación del servicio, firma, verificación del paquete y conexión real deben confirmarse antes de considerarlo listo para uso.
+Versión 1.1.0: tarjetas de órdenes en celular, activación con un código, estado inicial sin datos ficticios y respeto de las áreas de sistema y teclado de Android. La publicación del conector y la conexión real siguen pendientes; no se verificó en un teléfono físico.

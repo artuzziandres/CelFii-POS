@@ -2,6 +2,9 @@ package com.celfii.tecnico;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.os.Build;
+import android.view.WindowInsets;
+import android.widget.FrameLayout;
 import android.graphics.Color;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -29,7 +32,12 @@ public final class MainActivity extends Activity {
  @Override public void onCreate(Bundle state){
   super.onCreate(state);prefs=getSharedPreferences("connection",MODE_PRIVATE);
   getWindow().setStatusBarColor(Color.rgb(9,12,10));getWindow().setNavigationBarColor(Color.rgb(9,12,10));
-  web=new WebView(this);web.setBackgroundColor(Color.rgb(9,12,10));setContentView(web);
+  web=new WebView(this);web.setBackgroundColor(Color.rgb(9,12,10));FrameLayout root=new FrameLayout(this);root.setBackgroundColor(Color.rgb(9,12,10));root.addView(web,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
+  if(Build.VERSION.SDK_INT>=30){
+   getWindow().setDecorFitsSystemWindows(false);
+   root.setOnApplyWindowInsetsListener((view,insets)->{android.graphics.Insets safe=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout()|WindowInsets.Type.ime());view.setPadding(safe.left,safe.top,safe.right,safe.bottom);return WindowInsets.CONSUMED;});
+   root.requestApplyInsets();
+  }
   WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(true);settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setSupportMultipleWindows(false);
   web.addJavascriptInterface(new Bridge(),"CelFiiNative");
   web.setWebViewClient(new WebViewClient(){
@@ -70,9 +78,18 @@ public final class MainActivity extends Activity {
  public final class Bridge {
   @JavascriptInterface public boolean isConfigured(){return endpoint(prefs.getString("url",""))&&prefs.contains("token");}
   @JavascriptInterface public String getEndpoint(){return prefs.getString("url","");}
-  @JavascriptInterface public synchronized String configure(String url,String token){
-   if(!endpoint(url)||token==null||!token.matches("[A-Za-z0-9_-]{40,200}"))return error("Revisá la URL y la clave de activación").toString();
-   try{prefs.edit().putString("url",url).putString("token",encrypt(token)).commit();return "{\"ok\":true}";}catch(Exception e){return error("No se pudo guardar la conexión protegida").toString();}
+  @JavascriptInterface public void activate(String id,String url,String token){
+   if(id==null||id.length()>80)return;
+   if(!endpoint(url)||token==null||!token.matches("[A-Za-z0-9_-]{40,200}")){respond(id,error("El código de activación no es válido"));return;}
+   jobs.submit(()->{try{
+    JSONObject result=post(url,new JSONObject().put("token",token).put("action","getData").put("args",new JSONObject()));
+    if(result.optBoolean("ok")){
+     JSONObject records=result.optJSONObject("result");
+     if(records==null||records.optJSONArray("orders")==null||records.optJSONArray("clients")==null||records.optJSONArray("states")==null)throw new IOException("Respuesta inválida");
+     if(!prefs.edit().putString("url",url).putString("token",encrypt(token)).commit())throw new IOException("No se pudo guardar la conexión");
+    }
+    respond(id,result);
+   }catch(Exception e){respond(id,error("No se pudo conectar. Comprobá Internet y que el conector de la planilla esté publicado."));}});
   }
   @JavascriptInterface public void request(String id,String action,String argument){
    if(id==null||id.length()>80||!("getData".equals(action)||"saveOrder".equals(action))||argument==null||argument.length()>100000)return;
@@ -80,6 +97,6 @@ public final class MainActivity extends Activity {
   }
   @JavascriptInterface public void printReceipt(){runOnUiThread(()->{if(web!=null)((PrintManager)getSystemService(PRINT_SERVICE)).print("CelFii-Recepcion",web.createPrintDocumentAdapter("CelFii-Recepcion"),null);});}
  }
- @Override public void onBackPressed(){web.evaluateJavascript("(()=>{const d=document.querySelector('dialog[open]');if(d){d.close();return true;}return false;})()",value->{if(!"true".equals(value))finish();});}
+ @Override public void onBackPressed(){web.evaluateJavascript("(()=>{const d=document.querySelector('dialog[open]');if(d){if(d.dispatchEvent(new Event('cancel',{cancelable:true})))d.close();return true;}return false;})()",value->{if(!"true".equals(value))finish();});}
  @Override protected void onDestroy(){jobs.shutdownNow();if(web!=null){web.removeJavascriptInterface("CelFiiNative");web.destroy();web=null;}super.onDestroy();}
 }
